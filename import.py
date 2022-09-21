@@ -33,7 +33,7 @@ from utils import process_journal
 )
 @click.option(
     "--entries-separator",
-    "-s",
+    "-sep",
     help="String to use to separate merged entries. Default is a double '---'",
     default="---\n---",
 )
@@ -50,6 +50,13 @@ from utils import process_journal
     help="File containing tags to ignore, one per line. Can be used in combination with '-i': in such case, ignored tags are combined",
     default=None,
 )
+@click.option(
+    "--status-tags",
+    "-s",
+    multiple=True,
+    default=[None],
+    help="Add this tag as '#status/' tag, e.g., '-s Draft' becomes '#status/draft'. Can be used multiple times",
+)
 def convert(
     verbose: int,
     tags_prefix: str,
@@ -60,6 +67,7 @@ def convert(
     entries_separator: str,
     ignore_tags: tuple,
     ignore_from: click.File,
+    status_tags: tuple,
 ):
     """Converts DayOne entries into markdown files suitable to use as an Obsidian vault.
     Each journal will end up in a sub-folder named after the file (e.g.: Admin.json -> admin/). All JSON files
@@ -75,7 +83,13 @@ def convert(
         ignore_tags += tuple(x.strip("\n") for x in _ignore_tags)
 
     # Convert a tuple to a set to discard duplicate tags, if any
-    ignore_tags = set(ignore_tags)
+    ignore_tags = set(filter(bool, ignore_tags))
+
+    if verbose > 1:
+        click.echo(f"Ignoring the following tags: {', '.join(ignore_tags)}")
+
+    # Status tags, if any
+    status_tags = set(filter(bool, status_tags))
 
     # Process each JSON journal file in the input folder
     for filename in Path(folder).glob("*.json"):
@@ -88,6 +102,7 @@ def convert(
             merge_entries,
             entries_separator,
             ignore_tags,
+            status_tags,
         )
 
 

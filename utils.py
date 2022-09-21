@@ -3,7 +3,7 @@
 import json
 import re
 import shutil
-from typing import Dict, OrderedDict, Set
+from typing import Dict, Set
 from datetime import datetime
 from pathlib import Path
 
@@ -22,8 +22,10 @@ def retrieve_metadata(
     entry: Dict,
     local_date: datetime,
     tag_prefix: str,
-    ignore_tags: set,
+    ignore_tags: Set,
+    status_tags: Set,
     verbose: int = 0,
+    journal_name: str = None,
 ) -> Dict:
     """Fetch the metadata of a single journal entry"""
     metadata = {}
@@ -38,7 +40,7 @@ def retrieve_metadata(
     try:
         location = list(
             filter(
-                None,
+                bool,
                 [
                     entry["location"].get(key, None)
                     for key in (
@@ -93,13 +95,23 @@ def retrieve_metadata(
 
     # Process tags
     tags = []
-    if "tags" in entry:
-        for tag in entry["tags"]:
-            if tag not in ignore_tags:
-                # format the tag: remove spaces and capitalize each word
-                # Example: #Original tag --> #{prefix}/originalTag
-                new_tag = capwords(f"{tag_prefix}{tag}")
-                tags.append(new_tag)
+
+    # First tag is the journal name, if present
+    if journal_name is not None:
+        tags.append(capwords(f"#journal/{journal_name}"))
+
+    if (entry_tags := entry.get("tags", None)) is not None:
+        entry_tags = set(entry_tags)
+
+        for tag in (entry_tags - ignore_tags) - status_tags:
+            # format the tag: remove spaces and capitalize each word
+            # Example: #Original tag --> #{prefix}/originalTag
+            new_tag = capwords(f"{tag_prefix}{tag}")
+            tags.append(new_tag)
+
+        # Handle status tags
+        if status_tags := entry_tags & status_tags:
+            tags.extend(map(lambda tag: capwords("#status/" + tag), status_tags))
 
     # Add a tag for the location to make places searchable in Obsidian
     if location:
@@ -125,15 +137,15 @@ def process_journal(
     merge_entries: bool,
     entries_separator: str,
     ignore_tags: Set,
+    status_tags: Set,
 ) -> None:
     """Process a journal JSON file"""
 
     if verbose != 0:
         click.echo(f"Verbose mode enabled. Verbosity level: {verbose}")
 
-    journal_name = (
-        journal.stem.lower()
-    )  # name of folder where journal entries will end up in your Obsidian vault
+    # name of folder where journal entries will end up in your Obsidian vault
+    journal_name = journal.stem.lower()
     base_folder = journal.resolve().parent
     journal_folder = base_folder / journal_name
 
@@ -158,8 +170,8 @@ def process_journal(
 
     click.echo(f"Begin processing entries for '{journal.name}'")
 
-    # All entries processed will be added to a ordered dictionary
-    entries = OrderedDict()
+    # All entries processed will be added to a dictionary
+    entries = {}
 
     # Mapping between entries UUIDs and Markdown files
     # Needed to perform DayOne -> Obsidian links conversion
@@ -167,6 +179,8 @@ def process_journal(
 
     with open(journal, encoding="utf-8") as json_file:
         data = json.load(json_file)
+
+        entry: Dict
         for entry in track(data["entries"]):
             new_entry = []
 
@@ -177,7 +191,13 @@ def process_journal(
 
             # Fetch entry's metadata
             metadata = retrieve_metadata(
-                entry, local_date, tag_prefix, ignore_tags=ignore_tags, verbose=verbose
+                entry,
+                local_date,
+                tag_prefix,
+                ignore_tags=ignore_tags,
+                status_tags=status_tags,
+                journal_name=journal_name,
+                verbose=verbose,
             )
 
             # Add some metadata as a YAML front matter
@@ -198,9 +218,10 @@ def process_journal(
                 new_entry.append(f"{name}:: {description}\n")
             new_entry.append("\n\n")
 
-            # Add body text if it exists (can have the odd blank entry), after some tidying up
-            try:
-                new_text = entry["text"].replace("\\", "")
+            # Add body text if it exists (entries can have a "blank body" sometimes), after some tidying up
+            entry_text: str
+            if (entry_text := entry.get("text", None)) is not None:
+                new_text = entry_text.replace("\\", "")
                 new_text = new_text.replace("\u2028", "\n")
                 new_text = new_text.replace("\u1C6A", "\n\n")
                 new_text = new_text.replace("\u200b", "")
@@ -309,11 +330,8 @@ def process_journal(
 
                 new_entry.append(new_text)
 
-                # Add the entry's uuid as an hidden
-                new_entry.append(f"\n\n%%\nuuid:: {entry_uuid}\n")
-
-            except KeyError:
-                pass
+                # Add the entry's uuid as an hidden section (won't be present in Obsidian preview mode)
+                new_entry.append(f"\n\n%%\nuuid:: {entry_uuid}\n%%")
 
             # Save entries organised by year, year-month, year-month-day.md
             year_dir = journal_folder / str(creation_date.year)
