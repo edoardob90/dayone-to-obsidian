@@ -1,9 +1,9 @@
-# pylint: disable=too-many-nested-blocks,too-many-branches,too-many-locals
+# pylint: disable=too-many-nested-blocks,too-many-branches,too-many-locals,line-too-long,invalid-name
 """utils.py"""
 import json
 import re
 import shutil
-from typing import Dict, OrderedDict
+from typing import Dict, OrderedDict, Set
 from datetime import datetime
 from pathlib import Path
 
@@ -14,7 +14,7 @@ from rich.progress import track
 
 
 def capwords(string: str, sep: str = "") -> str:
-    """Utility function to capitalize the first letter of each word in a string"""
+    """Capitalize the first letter of each word in a string"""
     return sep.join(word[0].upper() + word[1:].lower() for word in string.split(" "))
 
 
@@ -22,6 +22,7 @@ def retrieve_metadata(
     entry: Dict,
     local_date: datetime,
     tag_prefix: str,
+    ignore_tags: set,
     verbose: int = 0,
 ) -> Dict:
     """Fetch the metadata of a single journal entry"""
@@ -94,19 +95,21 @@ def retrieve_metadata(
     tags = []
     if "tags" in entry:
         for tag in entry["tags"]:
-            # format the tag: remove spaces and capitalize each word
-            # Example: #Original tag --> #{prefix}/originalTag
-            new_tag = capwords(f"{tag_prefix}{tag}")
-            tags.append(new_tag)
+            if tag not in ignore_tags:
+                # format the tag: remove spaces and capitalize each word
+                # Example: #Original tag --> #{prefix}/originalTag
+                new_tag = capwords(f"{tag_prefix}{tag}")
+                tags.append(new_tag)
 
     # Add a tag for the location to make places searchable in Obsidian
     if location:
         tags.append(f"#places/{'/'.join(map(capwords, location[-1:0:-1]))}")
 
-    # TODO: how to handle starred entries?
-    # if entry["starred"]:
-    #     tags.append(f"{tag_prefix}\u2B50")
+    # Add a :heart: emoji for starred entries
+    if entry["starred"]:
+        tags.append("#\u2764")
 
+    # Build the final string with all the tags
     if tags:
         metadata["tags"] = ", ".join(tags)
 
@@ -121,6 +124,7 @@ def process_journal(
     yaml: bool,
     merge_entries: bool,
     entries_separator: str,
+    ignore_tags: Set,
 ) -> None:
     """Process a journal JSON file"""
 
@@ -172,7 +176,9 @@ def process_journal(
             )  # It's natural to use our local date/time as reference point, not UTC
 
             # Fetch entry's metadata
-            metadata = retrieve_metadata(entry, local_date, tag_prefix, verbose=verbose)
+            metadata = retrieve_metadata(
+                entry, local_date, tag_prefix, ignore_tags=ignore_tags, verbose=verbose
+            )
 
             # Add some metadata as a YAML front matter
             if yaml:
@@ -191,16 +197,6 @@ def process_journal(
             for name, description in metadata.items():
                 new_entry.append(f"{name}:: {description}\n")
             new_entry.append("\n\n")
-
-            # Add date as page header, removing time if it's 12 midday as time obviously not read
-            # new_entry.append(
-            #     "## {icon}{date}\n".format(
-            #         icon=date_icon,
-            #         date=local_date.strftime("%A, %-d %B %Y at %H:%M").replace(
-            #             " at 12:00 PM", ""
-            #         ),
-            #     )
-            # )
 
             # Add body text if it exists (can have the odd blank entry), after some tidying up
             try:
@@ -263,9 +259,9 @@ def process_journal(
 
                 if "audios" in entry:
                     for audio in entry["audios"]:
-                        audio_format = (
-                            "m4a"  # AAC files are very often saved with .m4a extension
-                        )
+                        # Audio type is missing in DayOne JSON
+                        # AAC files are very often saved with .m4a extension
+                        audio_format = "m4a"
                         original_audio_file = (
                             base_folder / "audios" / f"{audio['md5']}.{audio_format}"
                         )

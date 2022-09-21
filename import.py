@@ -1,4 +1,4 @@
-# pylint: disable=too-many-arguments
+# pylint: disable=too-many-arguments,line-too-long,no-value-for-parameter
 """import.py"""
 from pathlib import Path
 
@@ -37,14 +37,29 @@ from utils import process_journal
     help="String to use to separate merged entries. Default is a double '---'",
     default="---\n---",
 )
+@click.option(
+    "--ignore-tags",
+    "-i",
+    multiple=True,
+    help="Ignore this tag. Can be used multiple times, e.g., -i 'Tag1' -i 'Tag2'",
+    default=[None],
+)
+@click.option(
+    "--ignore-from",
+    type=click.File(encoding="utf-8"),
+    help="File containing tags to ignore, one per line. Can be used in combination with '-i': in such case, ignored tags are combined",
+    default=None,
+)
 def convert(
-    verbose,
-    tags_prefix,
-    folder,
-    convert_links,
-    yaml,
-    merge_entries,
-    entries_separator,
+    verbose: int,
+    tags_prefix: str,
+    folder: click.Path,
+    convert_links: bool,
+    yaml: bool,
+    merge_entries: bool,
+    entries_separator: str,
+    ignore_tags: tuple,
+    ignore_from: click.File,
 ):
     """Converts DayOne entries into markdown files suitable to use as an Obsidian vault.
     Each journal will end up in a sub-folder named after the file (e.g.: Admin.json -> admin/). All JSON files
@@ -54,6 +69,14 @@ def convert(
 
     FOLDER is where your DayOne exports reside and where the converted markdown files will be written.
     """
+    # Build the list of tags to ignore
+    if ignore_from is not None:
+        _ignore_tags = ignore_from.readlines()
+        ignore_tags += tuple(x.strip("\n") for x in _ignore_tags)
+
+    # Convert a tuple to a set to discard duplicate tags, if any
+    ignore_tags = set(ignore_tags)
+
     # Process each JSON journal file in the input folder
     for filename in Path(folder).glob("*.json"):
         process_journal(
@@ -64,6 +87,7 @@ def convert(
             yaml,
             merge_entries,
             entries_separator,
+            ignore_tags,
         )
 
 
