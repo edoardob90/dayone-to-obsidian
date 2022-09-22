@@ -7,10 +7,12 @@ from typing import Dict, Set
 from datetime import datetime
 from pathlib import Path
 
-import click
 import dateutil.parser
 import pytz
-from rich.progress import track
+
+from rich.progress import Progress
+
+from rich_utils import warn_msg, verbose_msg, info_msg
 
 
 def capwords(string: str, sep: str = "") -> str:
@@ -54,7 +56,7 @@ def retrieve_metadata(
         )
     except KeyError:
         if verbose and verbose > 1:
-            click.echo(
+            verbose_msg(
                 f"Entry with date '{local_date.strftime('%Y-%m-%d')}' has no location!"
             )
 
@@ -129,21 +131,20 @@ def retrieve_metadata(
 
 
 def process_journal(
+    progress: Progress,
     journal: Path,
+    vault_directory: Path,
     tag_prefix: str,
     verbose: int,
     convert_links: bool,
     yaml: bool,
+    force: bool,
     merge_entries: bool,
     entries_separator: str,
     ignore_tags: Set,
     status_tags: Set,
 ) -> None:
     """Process a journal JSON file"""
-
-    if verbose != 0:
-        click.echo(f"Verbose mode enabled. Verbosity level: {verbose}")
-
     # name of folder where journal entries will end up in your Obsidian vault
     journal_name = journal.stem.lower()
     base_folder = journal.resolve().parent
@@ -152,36 +153,33 @@ def process_journal(
     # Clean out existing journal folder, otherwise each run creates new files
     if journal_folder.exists():
         if verbose > 0:
-            click.echo(f"Deleting existing folder: {journal_folder}")
+            warn_msg(f"Deleting existing folder '{journal_folder}'")
         shutil.rmtree(journal_folder)
 
     if verbose > 0:
-        click.echo(f"Creating {journal_folder}")
+        info_msg(f"Creating '{journal_folder}'")
     journal_folder.mkdir()
 
-    if yaml and verbose > 0:
-        click.echo("Each entry will have a YAML frontmatter")
-        if verbose > 1:
-            click.echo(
-                "YAML frontmatter will contain 'Location', 'Location Name', and 'Tags'"
-            )
-    elif verbose > 0:
-        click.echo("No YAML frontmatter will be added")
-
-    click.echo(f"Begin processing entries for '{journal.name}'")
+    # info_msg(f"Begin processing entries for '{journal.name}'")
 
     # All entries processed will be added to a dictionary
     entries = {}
+    merged_entries = 0
 
     # Mapping between entries UUIDs and Markdown files
     # Needed to perform DayOne -> Obsidian links conversion
     uuid_to_file = {}
 
     with open(journal, encoding="utf-8") as json_file:
-        data = json.load(json_file)
+        data: Dict = json.load(json_file)
+
+        task = progress.add_task(
+            f"[bold green]Processing entries of '[cyan][not bold]{journal.name}[/not bold][/cyan]'",
+            total=len(data["entries"]),
+        )
 
         entry: Dict
-        for entry in track(data["entries"]):
+        for entry in data["entries"]:
             new_entry = []
 
             creation_date = dateutil.parser.isoparse(entry["creationDate"])
@@ -247,7 +245,7 @@ def process_journal(
                         )
                         if original_photo_file.exists():
                             if verbose > 1:
-                                click.echo(
+                                verbose_msg(
                                     f"Renaming {original_photo_file} to {renamed_photo_file}"
                                 )
                             original_photo_file.rename(renamed_photo_file)
@@ -267,7 +265,7 @@ def process_journal(
                         )
                         if original_pdf_file.exists():
                             if verbose > 1:
-                                click.echo(
+                                verbose_msg(
                                     f"Renaming {original_pdf_file} to {renamed_pdf_file}"
                                 )
                             original_pdf_file.rename(renamed_pdf_file)
@@ -293,7 +291,7 @@ def process_journal(
                         )
                         if original_audio_file.exists():
                             if verbose > 1:
-                                click.echo(
+                                verbose_msg(
                                     f"Renaming {original_audio_file} to {renamed_audio_file}"
                                 )
                             original_audio_file.rename(renamed_audio_file)
@@ -317,7 +315,7 @@ def process_journal(
                         )
                         if original_video_file.exists():
                             if verbose > 1:
-                                click.echo(
+                                verbose_msg(
                                     f"Renaming {original_video_file} to {renamed_video_file}"
                                 )
                             original_video_file.rename(renamed_video_file)
@@ -336,47 +334,60 @@ def process_journal(
             # Save entries organised by year, year-month, year-month-day.md
             year_dir = journal_folder / str(creation_date.year)
             month_dir = year_dir / creation_date.strftime("%Y-%m")
-
-            if not year_dir.exists():
-                year_dir.mkdir()
-
             if not month_dir.is_dir():
-                month_dir.mkdir()
+                month_dir.mkdir(parents=True)
 
             # Target filename to save to. Will be modified if already exists
             file_date_format = local_date.strftime("%Y-%m-%d")
             target_file = month_dir / f"{file_date_format}.md"
+            target_file_rel = (
+                Path(journal_name)
+                / f"{creation_date.strftime('%Y/%Y-%m')}/{file_date_format}.md"
+            )
 
-            # Here is where we handle multiple entries on the same day. Each goes to it's own file
-            if target_file.stem in entries:
-                if verbose > 1:
-                    click.echo(
-                        f"Found another entry with the same date '{target_file.stem}'"
-                    )
-                if not merge_entries:
-                    # File exists, need to find the next in sequence and append alpha character marker
-                    index = 97  # ASCII a
-                    target_file = month_dir / f"{file_date_format}{chr(index)}.md"
-                    while target_file.stem in entries:
-                        index += 1
+            # Skip files already present in the vault directory
+            if vault_directory is None or (
+                force
+                or not (Path(vault_directory).expanduser() / target_file_rel).exists()
+            ):
+                # Here is where we handle multiple entries on the same day. Each goes to it's own file
+                if target_file.stem in entries:
+                    if verbose > 1:
+                        warn_msg(
+                            f"Found another entry with the same date '{target_file.stem}'"
+                        )
+                    if not merge_entries:
+                        # File exists, need to find the next in sequence and append alpha character marker
+                        index = 97  # ASCII a
                         target_file = month_dir / f"{file_date_format}{chr(index)}.md"
-                else:
-                    prev_entry, _ = entries.pop(target_file.stem)
-                    new_entry = (
-                        prev_entry + [f"\n\n{entries_separator}\n\n"] + new_entry
+                        while target_file.stem in entries:
+                            index += 1
+                            target_file = (
+                                month_dir / f"{file_date_format}{chr(index)}.md"
+                            )
+                    else:
+                        merged_entries += 1
+                        prev_entry, _ = entries.pop(target_file.stem)
+                        new_entry = (
+                            prev_entry + [f"\n\n{entries_separator}\n\n"] + new_entry
+                        )
+
+                # Add current entry's as a new key-value pair in entries dict
+                entries[target_file.stem] = new_entry, target_file
+
+                # Step 1 to replace dayone internal links to other entries with proper Obsidian [[links]]
+                uuid_to_file[entry_uuid] = target_file.name
+            else:
+                if verbose > 1:
+                    verbose_msg(
+                        f"File '{target_file_rel}' already exists in vault directory!"
                     )
 
-            # Add current entry's as a new key-value pair in entries dict
-            entries[target_file.stem] = new_entry, target_file
+            progress.update(task, advance=1)
 
-            # Step 1 to replace dayone internal links to other entries with proper Obsidian [[links]]
-            uuid_to_file[entry_uuid] = target_file.name
-
-        click.echo(f"Complete: {len(data['entries'])} entries processed.")
+        # info_msg(f"Complete: {len(data['entries'])} entries processed.")
 
     if convert_links:
-        click.echo("Converting Day One internal links to Obsidian (when possible)")
-
         # Step 2 to replace dayone internal links: we must do a second iteration over entries
         # A replacement function for dayone internal links
         def replace_link(match: re.Match) -> str:
@@ -399,4 +410,6 @@ def process_journal(
         with open(target_file, "w", encoding="utf-8") as fp:
             fp.write(text)
 
-    click.echo(f"Done. Entries have been exported to '{journal_folder}'.")
+    info_msg(
+        f":white_check_mark: {len(entries)}/{len(data['entries'])} ({merged_entries} merged) entries have been exported to '{journal_folder}'"
+    )

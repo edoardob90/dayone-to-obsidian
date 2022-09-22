@@ -5,12 +5,28 @@ from pathlib import Path
 import click
 
 from utils import process_journal
+from rich_utils import verbose_msg, info_msg, progress
 
 
 @click.command()
 @click.argument(
     "folder",
     type=click.Path(exists=True, file_okay=False),
+)
+@click.option(
+    "--vault-directory",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True),
+    help="Obsidian vault directory where you will copy the exported Markdown files. "
+    "If passed, the script will skip exporting already existent files. "
+    "PLEASE NOTE: the script IS NOT perfoming any copy operation, it must be done manually",
+)
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    default=False,
+    help="Overwrite output files, even if they are present in the vault directory. "
+    "Makes sense only with --vault-directory",
 )
 @click.option("-v", "--verbose", count=True, help="Turn on verbose logging")
 @click.option("--yaml/--no-yaml", help="Add a YAML frontmatter", default=False)
@@ -61,6 +77,8 @@ def convert(
     verbose: int,
     tags_prefix: str,
     folder: click.Path,
+    vault_directory: click.Path,
+    force: bool,
     convert_links: bool,
     yaml: bool,
     merge_entries: bool,
@@ -77,6 +95,19 @@ def convert(
 
     FOLDER is where your DayOne exports reside and where the converted markdown files will be written.
     """
+    if verbose != 0:
+        verbose_msg(f"Verbose mode enabled. Verbosity level: [blue]{verbose}[/blue]")
+
+        if yaml:
+            info_msg("Each entry will have a YAML frontmatter")
+        else:
+            info_msg("No YAML frontmatter will be added")
+
+        if convert_links:
+            info_msg(
+                ":arrows_clockwise: Converting Day One internal links to Obsidian (when possible)"
+            )
+
     # Build the list of tags to ignore
     if ignore_from is not None:
         _ignore_tags = ignore_from.readlines()
@@ -86,24 +117,32 @@ def convert(
     ignore_tags = set(filter(bool, ignore_tags))
 
     if verbose > 1:
-        click.echo(f"Ignoring the following tags: {', '.join(ignore_tags)}")
+        verbose_msg(f"Ignoring the following tags: {', '.join(ignore_tags)}")
 
     # Status tags, if any
     status_tags = set(filter(bool, status_tags))
 
+    if verbose > 0:
+        info_msg(f"Assigned status tags: {status_tags}")
+
     # Process each JSON journal file in the input folder
-    for filename in Path(folder).glob("*.json"):
-        process_journal(
-            filename,
-            tags_prefix,
-            verbose,
-            convert_links,
-            yaml,
-            merge_entries,
-            entries_separator,
-            ignore_tags,
-            status_tags,
-        )
+    info_msg("[bold green]Processing journals...")
+    with progress:
+        for filename in Path(folder).glob("*.json"):
+            process_journal(
+                progress=progress,
+                journal=filename,
+                vault_directory=vault_directory,
+                force=force,
+                tag_prefix=tags_prefix,
+                verbose=verbose,
+                convert_links=convert_links,
+                yaml=yaml,
+                merge_entries=merge_entries,
+                entries_separator=entries_separator,
+                ignore_tags=ignore_tags,
+                status_tags=status_tags,
+            )
 
 
 if __name__ == "__main__":
