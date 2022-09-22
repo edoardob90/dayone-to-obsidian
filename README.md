@@ -18,7 +18,7 @@ Check the `--help` option to get a description of the new features. In summary:
 - Run ``poetry install``
 - Run ``poetry run python import.py path/to/folder``
 
-You can also run **withour Poetry**: you can simply create a virtual environment and run `pip install -r requirements.txt` since the script requires only a couple of packages not in Python standard library.
+You can also run **without Poetry**: you can simply create a virtual environment and run `pip install -r requirements.txt` since the script requires only a couple of packages not in Python standard library.
 
 ## Day One version
 This script works with journals exported from DayOne, version **7.16** (build 1421) as of September, 21st 2022.
