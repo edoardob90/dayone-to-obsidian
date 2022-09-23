@@ -251,8 +251,8 @@ def process_journal(
                             original_photo_file.rename(renamed_photo_file)
 
                         new_text = re.sub(
-                            r"(\!\[\]\(dayone-moment:\/\/)([A-F0-9]+)(\))",
-                            (r"![[\2.{}]]".format(image_type)),
+                            r"(\!\[\]\(dayone-moment:\/\/)([A-F0-9]+)\)",
+                            (rf"![[\2.{image_type}]]"),
                             new_text,
                         )
 
@@ -271,7 +271,7 @@ def process_journal(
                             original_pdf_file.rename(renamed_pdf_file)
 
                         new_text = re.sub(
-                            r"(\!\[\]\(dayone-moment:\/pdfAttachment\/)([A-F0-9]+)(\))",
+                            r"(\!\[\]\(dayone-moment:\/+pdfAttachment\/)([A-F0-9]+)\)",
                             r"![[\2.pdf]]",
                             new_text,
                         )
@@ -297,8 +297,8 @@ def process_journal(
                             original_audio_file.rename(renamed_audio_file)
 
                         new_text = re.sub(
-                            r"(\!\[\]\(dayone-moment:\/audio/)([A-F0-9]+)(\))",
-                            r"![[\2.{}]]".format(audio_format),
+                            r"(\!\[\]\(dayone-moment:\/+audio/)([A-F0-9]+)\)",
+                            rf"![[\2.{audio_format}]]",
                             new_text,
                         )
 
@@ -321,8 +321,8 @@ def process_journal(
                             original_video_file.rename(renamed_video_file)
 
                         new_text = re.sub(
-                            r"(\!\[\]\(dayone-moment:\/video/)([A-F0-9]+)(\))",
-                            r"![[\2.{}]]".format(video_format),
+                            r"(\!\[\]\(dayone-moment:\/+video/)([A-F0-9]+)\)",
+                            rf"![[\2.{video_format}]]",
                             new_text,
                         )
 
@@ -356,7 +356,13 @@ def process_journal(
                         warn_msg(
                             f"Found another entry with the same date '{target_file.stem}'"
                         )
-                    if not merge_entries:
+                    if merge_entries:
+                        merged_entries += 1
+                        prev_entry, _ = entries.pop(target_file.stem)
+                        new_entry = (
+                            prev_entry + [f"\n\n{entries_separator}\n\n"] + new_entry
+                        )
+                    else:
                         # File exists, need to find the next in sequence and append alpha character marker
                         index = 97  # ASCII a
                         target_file = month_dir / f"{file_date_format}{chr(index)}.md"
@@ -365,12 +371,6 @@ def process_journal(
                             target_file = (
                                 month_dir / f"{file_date_format}{chr(index)}.md"
                             )
-                    else:
-                        merged_entries += 1
-                        prev_entry, _ = entries.pop(target_file.stem)
-                        new_entry = (
-                            prev_entry + [f"\n\n{entries_separator}\n\n"] + new_entry
-                        )
 
                 # Add current entry's as a new key-value pair in entries dict
                 entries[target_file.stem] = new_entry, target_file
@@ -411,5 +411,5 @@ def process_journal(
             fp.write(text)
 
     info_msg(
-        f":white_check_mark: {len(entries)}/{len(data['entries'])} ({merged_entries} merged) entries have been exported to '{journal_folder}'"
+        f":white_check_mark: {len(entries)}/{len(data['entries'])}{f' ({merged_entries})' if merge_entries else ''} entries have been exported to '{journal_folder}'"
     )
