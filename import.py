@@ -18,7 +18,7 @@ from rich_utils import verbose_msg, info_msg, progress
     type=click.Path(exists=True, file_okay=False, dir_okay=True),
     help="Obsidian vault directory where you will copy the exported Markdown files. "
     "If passed, the script will skip exporting already existent files. "
-    "PLEASE NOTE: the script IS NOT perfoming any copy operation, it must be done manually",
+    "PLEASE NOTE: the script IS NOT perfoming any copy operation, which must be done manually",
 )
 @click.option(
     "--force",
@@ -37,7 +37,7 @@ from rich_utils import verbose_msg, info_msg, progress
     is_flag=True,
 )
 @click.option(
-    "--tags-prefix",
+    "--tag-prefix",
     help="Prefix to add as part of the tag name for sub-tags. Default is '#on'",
     default="#on/",
 )
@@ -75,7 +75,7 @@ from rich_utils import verbose_msg, info_msg, progress
 )
 def convert(
     verbose: int,
-    tags_prefix: str,
+    tag_prefix: str,
     folder: click.Path,
     vault_directory: click.Path,
     force: bool,
@@ -134,7 +134,7 @@ def convert(
                 journal=filename,
                 vault_directory=vault_directory,
                 force=force,
-                tag_prefix=tags_prefix,
+                tag_prefix=tag_prefix,
                 verbose=verbose,
                 convert_links=convert_links,
                 yaml=yaml,

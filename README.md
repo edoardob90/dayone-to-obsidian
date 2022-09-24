@@ -52,7 +52,7 @@ and `rsync` will re-create the exact folder structure.
 
 The metadata formatting choices were dictated by purely personal criteria. In other words, the files are formatted the way I want them in my Obsidian vault.
 
-That said, the formatting can be adapted to one's purposes very easily. Take a look at [relevant lines](https://github.com/edoardob90/dayone-to-obsidian/blob/260f5d68b4e40da51898962c46a55c7dd355b709/utils.py#L213-L219) of the `utils.py` file to see how to change the formatting.
+That said, the formatting can be adapted to one's purposes very easily. Take a look at the definition of the `Entry` class at the beginning of `utils.py` and adjust the `__str__` method to change the formatting.
 
 ## Todo
 
@@ -61,3 +61,4 @@ Features I'm considering:
 - [x] Specify the vault destination folder to skip files that are already present
 - [ ] Implement a copy with `rsync`
 - [ ] Auto-unzip of the exported journal
+- [ ] Add possibility to read in options from a config file (ideally a `config.yaml`)

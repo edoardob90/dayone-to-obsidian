@@ -1,18 +1,58 @@
-# pylint: disable=too-many-nested-blocks,too-many-branches,too-many-locals,line-too-long,invalid-name
+# pylint: disable=too-many-nested-blocks,too-many-branches,too-many-locals,line-too-long,invalid-name,consider-using-f-string
 """utils.py"""
 import json
 import re
 import shutil
-from typing import Dict, Set
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, Set
 
 import dateutil.parser
 import pytz
-
 from rich.progress import Progress
 
-from rich_utils import warn_msg, verbose_msg, info_msg
+from rich_utils import info_msg, verbose_msg, warn_msg
+
+
+@dataclass
+class Entry:
+    """A single journal entry"""
+
+    uuid: str = None
+    has_yaml: bool = False
+    yaml: str = ""
+    metadata: dict = field(default_factory=dict)
+    text: str = ""
+    output_file: Path = None
+
+    def __str__(self) -> str:
+        if self.has_yaml:
+            self.yaml = "---\n{yaml_block}\n---\n\n".format(
+                yaml_block="\n".join(
+                    [
+                        f"{name.lower().replace(' ', '_')}: {value}"
+                        for name, value in self.metadata.items()
+                        if name in ("location", "places", "dates", "tags")
+                    ]
+                )
+            )
+        metadata = [f"{name}:: {value}" for name, value in self.metadata.items()]
+        return "{yaml}{metadata}\n%%uuid:: {uuid}%%\n\n{text}\n".format(
+            yaml=self.yaml, metadata="\n".join(metadata), text=self.text, uuid=self.uuid
+        )
+
+    def add_metadata(self, *_, **kwargs):
+        """Add metadata fields"""
+        for name, value in kwargs.items():
+            self.metadata[name] = value
+
+    def dump(self) -> None:
+        """Write out entry to a file"""
+        if self.output_file is None:
+            raise RuntimeError("Entry output file is undefined!")
+        with self.output_file.open("w", encoding="utf-8") as file:
+            file.write(self.__str__())
 
 
 def capwords(string: str, sep: str = "") -> str:
@@ -20,6 +60,7 @@ def capwords(string: str, sep: str = "") -> str:
     return sep.join(word[0].upper() + word[1:].lower() for word in string.split(" "))
 
 
+# TODO: refactor this function into a method of the Entry class
 def retrieve_metadata(
     entry: Dict,
     local_date: datetime,
@@ -34,8 +75,9 @@ def retrieve_metadata(
     metadata["uuid"] = entry["uuid"]
 
     # Add raw create datetime adjusted for timezone and identify timezone
-    metadata["dates"] = local_date.isoformat()
-    metadata["timezone"] = entry["timeZone"]
+    metadata["dates"] = local_date.strftime("%Y-%m-%d")
+    metadata["time"] = local_date.strftime("%H:%M:%S")
+    # metadata["timezone"] = entry["timeZone"]
 
     # Add location
     location = []
@@ -66,10 +108,8 @@ def retrieve_metadata(
     if "location" in entry and all(
         ["latitude" in entry["location"], "longitude" in entry["location"]]
     ):
-        lat = entry["location"]["latitude"]
-        lon = entry["location"]["longitude"]
-
-        metadata["location"] = f"{lat}, {lon}"
+        loc = entry["location"]
+        metadata["location"] = f"{loc.get('latitude')}, {loc.get('longitude')}"
 
     # Add weather information if present
     if "weather" in entry and all(
@@ -80,20 +120,6 @@ def retrieve_metadata(
         metadata[
             "weather"
         ] = f"{weather['conditionsDescription']}, {round(weather['temperatureCelsius'], 1)}°C, {round(weather['windSpeedKPH'], 1)} km/h wind"
-
-    # TODO: do I want to keep track of user activity? (most likely no)
-    # Add user activity if present
-    # if "userActivity" in entry:
-    #     activity = entry["userActivity"]
-    #     if "activityName" in activity:
-    #         metadata.append(
-    #             MetadataEntry(name="Activity", description=activity["activityName"])
-    #         )
-
-    #     if "stepCount" in activity and activity["stepCount"] > 0:
-    #         metadata.append(
-    #             MetadataEntry(name="Steps", description=activity["stepCount"])
-    #         )
 
     # Process tags
     tags = []
@@ -119,9 +145,9 @@ def retrieve_metadata(
     if location:
         tags.append(f"#places/{'/'.join(map(capwords, location[-1:0:-1]))}")
 
-    # Add a :heart: emoji for starred entries
+    # Add a :star: emoji for starred entries
     if entry["starred"]:
-        tags.append("#\u2764")
+        tags.append("#\u2B50")
 
     # Build the final string with all the tags
     if tags:
@@ -180,7 +206,7 @@ def process_journal(
 
         entry: Dict
         for entry in data["entries"]:
-            new_entry = []
+            new_entry = Entry()
 
             creation_date = dateutil.parser.isoparse(entry["creationDate"])
             local_date = creation_date.astimezone(
@@ -200,21 +226,12 @@ def process_journal(
 
             # Add some metadata as a YAML front matter
             if yaml:
-                new_entry.append("---\n")
-                for name, description in metadata.items():
-                    if name in ["location", "places", "tags"]:
-                        new_entry.append(
-                            f"{name.lower().replace(' ', '_')}: {description}\n"
-                        )
-                new_entry.append("---\n\n")
+                new_entry.has_yaml = True
 
             # Start Metadata section
-            # newEntry.append( '%%\n' ) # uncomment to hide metadata
-            new_entry.append("up:: [[Day One MOC]]\n")
-            entry_uuid = metadata.pop("uuid", None)
-            for name, description in metadata.items():
-                new_entry.append(f"{name}:: {description}\n")
-            new_entry.append("\n\n")
+            new_entry.metadata = {"up": "[[Day One MOC]]"}
+            new_entry.uuid = metadata.pop("uuid", None)
+            new_entry.add_metadata(**metadata)
 
             # Add body text if it exists (entries can have a "blank body" sometimes), after some tidying up
             entry_text: str
@@ -223,6 +240,7 @@ def process_journal(
                 new_text = new_text.replace("\u2028", "\n")
                 new_text = new_text.replace("\u1C6A", "\n\n")
                 new_text = new_text.replace("\u200b", "")
+                # TODO: fix multiple, consecutive newlines as well, e.g., \n\n\n\n -> \n
 
                 # Fixes multi-line ```code blocks```
                 # DayOne breaks these block in many lines with a triple ``` delimiters.
@@ -326,10 +344,10 @@ def process_journal(
                             new_text,
                         )
 
-                new_entry.append(new_text)
+                new_entry.text = new_text
 
                 # Add the entry's uuid as an hidden section (won't be present in Obsidian preview mode)
-                new_entry.append(f"\n\n%%\nuuid:: {entry_uuid}\n%%")
+                # new_entry.text.append(f"\n\n%%\nuuid:: {new_entry.uuid}\n%%")
 
             # Save entries organised by year, year-month, year-month-day.md
             year_dir = journal_folder / str(creation_date.year)
@@ -340,6 +358,9 @@ def process_journal(
             # Target filename to save to. Will be modified if already exists
             file_date_format = local_date.strftime("%Y-%m-%d")
             target_file = month_dir / f"{file_date_format}.md"
+            new_entry.output_file = target_file
+
+            # Relative path, to check if this entry is already present in the vault directory
             target_file_rel = (
                 Path(journal_name)
                 / f"{creation_date.strftime('%Y/%Y-%m')}/{file_date_format}.md"
@@ -358,10 +379,9 @@ def process_journal(
                         )
                     if merge_entries:
                         merged_entries += 1
-                        prev_entry, _ = entries.pop(target_file.stem)
-                        new_entry = (
-                            prev_entry + [f"\n\n{entries_separator}\n\n"] + new_entry
-                        )
+                        prev_entry: Entry = entries.pop(target_file.stem)
+                        del prev_entry.metadata["dates"]
+                        new_entry.text += f"\n\n{entries_separator}\n\n{prev_entry}"
                     else:
                         # File exists, need to find the next in sequence and append alpha character marker
                         index = 97  # ASCII a
@@ -371,12 +391,13 @@ def process_journal(
                             target_file = (
                                 month_dir / f"{file_date_format}{chr(index)}.md"
                             )
+                        new_entry.output_file = target_file
 
                 # Add current entry's as a new key-value pair in entries dict
-                entries[target_file.stem] = new_entry, target_file
+                entries[target_file.stem] = new_entry
 
                 # Step 1 to replace dayone internal links to other entries with proper Obsidian [[links]]
-                uuid_to_file[entry_uuid] = target_file.name
+                uuid_to_file[new_entry.uuid] = target_file.name
             else:
                 if verbose > 1:
                     verbose_msg(
@@ -385,31 +406,23 @@ def process_journal(
 
             progress.update(task, advance=1)
 
-        # info_msg(f"Complete: {len(data['entries'])} entries processed.")
+    def replace_link(match: re.Match) -> str:
+        """A replacement function for dayone internal links"""
+        link_text, uuid = match.groups()
+        if uuid in uuid_to_file:
+            return f"[[{uuid_to_file[uuid]}|{link_text}]]"
+        return f"^[Linked entry with UUID `{uuid}` not found]"
 
-    if convert_links:
-        # Step 2 to replace dayone internal links: we must do a second iteration over entries
-        # A replacement function for dayone internal links
-        def replace_link(match: re.Match) -> str:
-            link_text, uuid = match.groups()
-            if uuid in uuid_to_file:
-                return f"[[{uuid_to_file[uuid]}|{link_text}]]"
-            return f"^[Linked entry with UUID `{uuid}` not found]"
-
-        # The regex to match a dayone internal link: [link_text](dayone://view?EntryId=uuid)
-        regex = re.compile(r"\[(.*?)\]\(dayone2?:\/\/.*?([A-F0-9]+)\)")
-
+    entry: Entry
     for entry in entries.values():
-        text, target_file = entry
-        # an entry is a list of string, so we need to concat all of them
-        text = "".join(text)
-
         if convert_links:
-            text = re.sub(regex, replace_link, text)
-
-        with open(target_file, "w", encoding="utf-8") as fp:
-            fp.write(text)
+            # Step 2 to replace dayone internal links: we must do a second iteration over entries
+            # The regex to match a dayone internal link: [link_text](dayone://view?EntryId=uuid)
+            entry.text = re.sub(
+                r"\[(.*?)\]\(dayone2?:\/\/.*?([A-F0-9]+)\)", replace_link, entry.text
+            )
+        entry.dump()
 
     info_msg(
-        f":white_check_mark: {len(entries)}/{len(data['entries'])}{f' ({merged_entries})' if merge_entries else ''} entries have been exported to '{journal_folder}'"
+        f":white_check_mark: {len(entries)}/{len(data['entries'])}{f' ({merged_entries} merged)' if merge_entries else ''} entries have been exported to '{journal_folder}'"
     )
