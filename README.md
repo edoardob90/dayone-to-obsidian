@@ -28,9 +28,11 @@ This script works with journals exported from DayOne, version **7.16** (build 14
 
 ## Setup
 
-**This script deletes folders if run a second time**
-**You are responsible for ensuring against data loss**
-**This script renames files** (namely, media files)
+| :warning: WARNING                                  |
+| :------------------------------------------------- |
+| This script deletes folders if run a second time   |
+| You are responsible for ensuring against data loss |
+| This script renames files (namely, media files)    |
 
 1. Export your journal from [Day One in JSON format](https://help.dayoneapp.com/en/articles/440668-exporting-entries)
 2. Expand that zip file
@@ -51,6 +53,19 @@ and `rsync` will re-create the exact folder structure.
 ### Metadata formatting
 
 The metadata formatting choices were dictated by purely personal criteria. In other words, the files are formatted the way I want them in my Obsidian vault.
+
+An example of a metadata block:
+
+```
+up:: [[Obsidian link]]
+dates:: <entry date (YYYY-MM-DD)>
+time:: <entry time (HH:MM, localized)>
+places:: <entry address>
+location:: <GPS coordinates (if present)>
+weather:: <weather conditions>
+tags:: #prefix/tag1, #prefix/tag2 #status/statusTag1 #place/country/region/town
+%%uuid:: <entry UUID>%%
+```
 
 That said, the formatting can be adapted to one's purposes very easily. Take a look at the definition of the `Entry` class at the beginning of `utils.py` and adjust the `__str__` method to change the formatting.
 

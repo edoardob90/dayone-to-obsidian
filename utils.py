@@ -45,7 +45,7 @@ class Entry:
     def add_metadata(self, *_, **kwargs):
         """Add metadata fields"""
         for name, value in kwargs.items():
-            self.metadata[name] = value
+            self.metadata[name] = str(value)
 
     def dump(self) -> None:
         """Write out entry to a file"""
@@ -186,8 +186,6 @@ def process_journal(
         info_msg(f"Creating '{journal_folder}'")
     journal_folder.mkdir()
 
-    # info_msg(f"Begin processing entries for '{journal.name}'")
-
     # All entries processed will be added to a dictionary
     entries = {}
     merged_entries = 0
@@ -228,8 +226,8 @@ def process_journal(
             if yaml:
                 new_entry.has_yaml = True
 
-            # Start Metadata section
-            new_entry.metadata = {"up": "[[Day One MOC]]"}
+            # Add entry's metadata
+            new_entry.add_metadata(up="[[Day One MOC]]")
             new_entry.uuid = metadata.pop("uuid", None)
             new_entry.add_metadata(**metadata)
 
@@ -355,7 +353,7 @@ def process_journal(
             if not month_dir.is_dir():
                 month_dir.mkdir(parents=True)
 
-            # Target filename to save to. Will be modified if already exists
+            # Target filename to save to
             file_date_format = local_date.strftime("%Y-%m-%d")
             target_file = month_dir / f"{file_date_format}.md"
             new_entry.output_file = target_file
@@ -363,7 +361,7 @@ def process_journal(
             # Relative path, to check if this entry is already present in the vault directory
             target_file_rel = (
                 Path(journal_name)
-                / f"{creation_date.strftime('%Y/%Y-%m')}/{file_date_format}.md"
+                / f"{creation_date.strftime('%Y/%Y-%m')}" / f"{file_date_format}.md"
             )
 
             # Skip files already present in the vault directory
@@ -405,6 +403,10 @@ def process_journal(
                     )
 
             progress.update(task, advance=1)
+
+    # Rename JSON file to avoid reprocessing if the script is run twice
+    num_files = len(list(base_folder.glob(f"*{journal.stem}.json")))
+    journal.rename(str(num_files - 1) + "_" + journal.name)
 
     def replace_link(match: re.Match) -> str:
         """A replacement function for dayone internal links"""

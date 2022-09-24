@@ -128,7 +128,7 @@ def convert(
     # Process each JSON journal file in the input folder
     info_msg("[bold green]Processing journals...")
     with progress:
-        for filename in Path(folder).glob("*.json"):
+        for filename in Path(folder).glob("[!0-9]*.json"):
             process_journal(
                 progress=progress,
                 journal=filename,
@@ -143,6 +143,9 @@ def convert(
                 ignore_tags=ignore_tags,
                 status_tags=status_tags,
             )
+    info_msg(
+        "[bold green] :white_check_mark: All JSON journals (if any) have been processed!"
+    )
 
 
 if __name__ == "__main__":
