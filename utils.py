@@ -9,62 +9,10 @@ from typing import Dict, Set, List
 
 import dateutil.parser
 import pytz
-from attrs import define, field
 from rich.progress import Progress
 
 from rich_utils import info_msg, verbose_msg, warn_msg
-
-
-@define
-class Entry:
-    """A single journal entry"""
-
-    uuid: str = field(default=None, eq=True)
-    has_yaml: bool = field(default=False, eq=False)
-    yaml: str = field(default="", eq=False)
-    metadata: dict = field(factory=dict, eq=False)
-    text: str = field(default="", eq=False)
-    output_file: Path = field(default=None, eq=False)
-
-    def __str__(self) -> str:
-        if self.has_yaml:
-            self.yaml = "---\n{yaml_block}\n---\n\n".format(
-                yaml_block="\n".join(
-                    [
-                        f"{name.lower().replace(' ', '_')}: {value}"
-                        for name, value in self.metadata.items()
-                        if name in ("location", "places", "dates", "tags")
-                    ]
-                )
-            )
-
-        metadata = [f"{key}:: {value}" for key, value in self.metadata.items()]
-
-        return "{yaml}{metadata}\n\n{text}\n".format(
-            yaml=self.yaml, metadata="\n".join(metadata), text=self.text, uuid=self.uuid
-        )
-
-    @classmethod
-    def from_metadata(cls, metadata: dict) -> "Entry":
-        """Create a new `Entry` from a metadata dictionary"""
-        if not isinstance(metadata, dict):
-            raise TypeError(
-                f"Metadata must be of `dict` type, instead of {type(metadata)}."
-            )
-
-        entry = cls(uuid=metadata.pop("uuid", None), metadata=metadata)
-
-        if entry.uuid is not None:
-            entry.metadata["url"] = f"[DayOne](dayone://view?entryId={entry.uuid})"
-
-        return entry
-
-    def dump(self) -> None:
-        """Write out entry to a file"""
-        if self.output_file is None:
-            raise RuntimeError("Entry output file is undefined!")
-        with self.output_file.open("w", encoding="utf-8") as file:
-            file.write(f"{self}")
+from entry import Entry
 
 
 def capwords(string: str, sep: str = "") -> str:
@@ -212,8 +160,8 @@ def process_journal(
     # Needed to perform DayOne -> Obsidian links conversion
     uuid_to_file = {}
 
-    with open(journal, encoding="utf-8") as json_file:
-        data: Dict = json.load(json_file)
+    with journal.open(encoding="utf-8") as json_file:
+        data: List[Dict] = json.load(json_file)
 
         task = progress.add_task(
             f"[bold green]Processing entries of '[cyan][not bold]{journal.name}[/not bold][/cyan]'",
@@ -224,12 +172,9 @@ def process_journal(
         if metadata_ext is not None:
             extra_tags = metadata_ext.pop("tags", None)
 
-        entry: Dict
         for entry in data["entries"]:
             creation_date = dateutil.parser.isoparse(entry["creationDate"])
-            local_date = creation_date.astimezone(
-                pytz.timezone(entry["timeZone"])
-            )  # It's natural to use our local date/time as reference point, not UTC
+            local_date = creation_date.astimezone(pytz.timezone(entry["timeZone"]))
 
             # Fetch entry's metadata
             metadata = retrieve_metadata(
