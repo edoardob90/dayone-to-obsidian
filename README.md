@@ -110,7 +110,7 @@ tags:: #journal/journalName #prefix/tag1, #prefix/tag2 #status/statusTag1 #place
 url:: [DayOne](dayone://view?entryId=<uuid>)
 ```
 
-That said, the formatting can be adapted to one's purposes very easily. If you are comfortable in editing the source code and have some experience with Python, take a look at the definition of the `Entry` class at the beginning of `utils.py` and adjust the `__str__` method to change the formatting.
+That said, the formatting can be adapted to one's purposes very easily. If you are comfortable in editing the source code and have some experience with Python, take a look at the definition of the `Entry` class in the `entry.py` source file and adjust [the `__str__` method](https://github.com/edoardob90/dayone-to-obsidian/blob/ba3c1079a84dc7abe005d479c06eaa727c22bb29/entry.py#L28-L44) to change the string representation (i.e., how it will be written to file) of an entry.
 
 ## Todo
 
