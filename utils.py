@@ -20,112 +20,12 @@ def capwords(string: str, sep: str = "") -> str:
     return sep.join(word[0].upper() + word[1:].lower() for word in string.split(" "))
 
 
-# TODO: refactor this function into a method of the Entry class
-def retrieve_metadata(
-    entry: Dict,
-    local_date: datetime,
-    tag_prefix: str,
-    ignore_tags: Set,
-    status_tags: Set,
-    extra_tags: List,
-    verbose: int,
-    journal_name: str,
-) -> Dict:
-    """Fetch the metadata of a single journal entry"""
-    metadata = {}
-    metadata["uuid"] = entry["uuid"]
-
-    # Add raw create datetime adjusted for timezone and identify timezone
-    metadata["dates"] = local_date.strftime("%Y-%m-%d")
-    metadata["time"] = local_date.strftime("%H:%M:%S")
-    # metadata["timezone"] = entry["timeZone"]
-
-    # Add location
-    location = []
-    try:
-        location = list(
-            filter(
-                bool,
-                [
-                    entry["location"].get(key, None)
-                    for key in (
-                        "placeName",
-                        "localityName",
-                        "administrativeArea",
-                        "country",
-                    )
-                ],
-            )
-        )
-    except KeyError:
-        if verbose and verbose > 1:
-            verbose_msg(
-                f"Entry with date '{local_date.strftime('%Y-%m-%d')}' has no location!"
-            )
-
-    metadata["places"] = ", ".join(location)
-
-    # Add GPS, not all entries have this
-    if "location" in entry and all(
-        ["latitude" in entry["location"], "longitude" in entry["location"]]
-    ):
-        loc = entry["location"]
-        metadata["location"] = f"{loc.get('latitude')}, {loc.get('longitude')}"
-
-    # Add weather information if present
-    if "weather" in entry and all(
-        i in entry["weather"]
-        for i in ["conditionsDescription", "temperatureCelsius", "windSpeedKPH"]
-    ):
-        weather = entry["weather"]
-        metadata[
-            "weather"
-        ] = f"{weather['conditionsDescription']}, {round(weather['temperatureCelsius'], 1)}°C, {round(weather['windSpeedKPH'], 1)} km/h wind"
-
-    # Process tags
-    tags = []
-
-    # First tag is the journal name, if present
-    if journal_name is not None:
-        tags.append(capwords(f"#journal/{journal_name}"))
-
-    if (entry_tags := entry.get("tags", None)) is not None:
-        entry_tags = set(entry_tags)
-
-        for tag in (entry_tags - ignore_tags) - status_tags:
-            # format the tag: remove spaces and capitalize each word
-            # Example: #Original tag --> #{prefix}/originalTag
-            new_tag = capwords(f"{tag_prefix}{tag}")
-            tags.append(new_tag)
-
-        # Handle status tags
-        if status_tags := entry_tags & status_tags:
-            tags.extend(map(lambda tag: capwords("#status/" + tag), status_tags))
-
-    # Add a tag for the location to make places searchable in Obsidian
-    if location:
-        tags.append(f"#places/{'/'.join(map(capwords, location[-1:0:-1]))}")
-
-    # Add a :star: emoji for starred entries
-    if entry["starred"]:
-        tags.append("#\u2B50")
-
-    # Add extra tags, if any
-    if extra_tags is not None:
-        tags.extend(extra_tags)
-
-    # Build the final string with all the tags
-    if tags:
-        metadata["tags"] = ", ".join(tags)
-
-    return metadata
-
-
 def process_journal(
     progress: Progress,
     journal: Path,
     vault_directory: Path,
     tag_prefix: str,
+    status_prefix: str,
     verbose: int,
     convert_links: bool,
     yaml: bool,
@@ -138,7 +38,7 @@ def process_journal(
 ) -> None:
     """Process a journal JSON file"""
     # name of folder where journal entries will end up in your Obsidian vault
-    journal_name = journal.stem.lower()
+    journal_name = journal.stem
     base_folder = journal.resolve().parent
     journal_folder = base_folder / journal_name
 
@@ -172,24 +72,18 @@ def process_journal(
         if metadata_ext is not None:
             extra_tags = metadata_ext.pop("tags", None)
 
+        entry: Dict
         for entry in data["entries"]:
-            creation_date = dateutil.parser.isoparse(entry["creationDate"])
-            local_date = creation_date.astimezone(pytz.timezone(entry["timeZone"]))
-
-            # Fetch entry's metadata
-            metadata = retrieve_metadata(
+            # Create a new Entry and add metadata
+            new_entry = Entry.from_json_entry(
                 entry,
-                local_date,
-                tag_prefix,
+                tag_prefix=tag_prefix,
+                status_prefix=status_prefix,
                 extra_tags=extra_tags,
                 ignore_tags=ignore_tags,
                 status_tags=status_tags,
                 journal_name=journal_name,
-                verbose=verbose,
             )
-
-            # Create a new Entry and add metadata
-            new_entry = Entry.from_metadata(metadata)
 
             # Add any other metadata field found in the config file
             if metadata_ext is not None:
@@ -213,7 +107,6 @@ def process_journal(
                 new_text = re.sub(r"```\s+```", "", new_text, flags=re.MULTILINE)
 
                 # Handling attachments: photos, audios, videos, and documents (PDF)
-
                 if "photos" in entry:
                     # Correct photo links. The filename is the md5 code, not the identifier used in the text
                     for photo in entry["photos"]:
@@ -312,20 +205,20 @@ def process_journal(
                 new_entry.text = new_text
 
             # Save entries organised by year, year-month, year-month-day.md
-            year_dir = journal_folder / str(creation_date.year)
-            month_dir = year_dir / creation_date.strftime("%Y-%m")
+            year_dir = journal_folder / str(new_entry.creation_date.year)
+            month_dir = year_dir / new_entry.creation_date.strftime("%Y-%m")
             if not month_dir.is_dir():
                 month_dir.mkdir(parents=True)
 
             # Target filename to save to
-            file_date_format = local_date.strftime("%Y-%m-%d")
+            file_date_format = new_entry.local_date.strftime("%Y-%m-%d")
             target_file = month_dir / f"{file_date_format}.md"
             new_entry.output_file = target_file
 
             # Relative path, to check if this entry is already present in the vault directory
             target_file_rel = (
                 Path(journal_name)
-                / f"{creation_date.strftime('%Y/%Y-%m')}"
+                / f"{new_entry.creation_date.strftime('%Y/%Y-%m')}"
                 / f"{file_date_format}.md"
             )
 

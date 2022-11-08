@@ -46,7 +46,12 @@ from utils import process_journal
 )
 @click.option(
     "--tag-prefix",
-    help="Prefix to add as part of the tag name for sub-tags. Default is '#on'",
+    help="Prefix to add as part of the tag name for sub-tags. Default is '#on/'",
+    default=None,
+)
+@click.option(
+    "--status-prefix",
+    help="Prefix for status tags. Default is '#status/'",
     default=None,
 )
 @click.option(
@@ -79,6 +84,7 @@ def convert(
     config_file: click.Path,
     verbose: int,
     tag_prefix: str,
+    status_prefix: str,
     vault_directory: click.Path,
     force: bool,
     convert_links: bool,
@@ -89,12 +95,11 @@ def convert(
     status_tags: tuple,
 ):
     """Converts DayOne entries into markdown files suitable to use as an Obsidian vault.
-    Each journal will end up in a sub-folder named after the file (e.g.: Admin.json -> admin/). All JSON files
-    in the FOLDER will be processed, remove those you don't want processed. The FOLDER will also be the destination
-    for converted markdown files. After conversion you can open this folder as a vault in Obsidian. This is done
-    to prevent accidental modification of an existing vault.
+    Each journal will end up in a sub-folder named after the file (e.g., Personal.json -> personal/). All JSON files
+    in the FOLDER will be processed, **except** those whose filename starts with a number. Prepend any number to those files you want to exclude.
+    The FOLDER will also be the destination for converted markdown files. After conversion you can open this folder as a vault in Obsidian.
 
-    FOLDER is where your DayOne exports reside and where the converted markdown files will be written.
+    FOLDER is where your DayOne JSON exports reside and where the converted markdown files will be written.
     """
     if verbose != 0:
         verbose_msg(f"Verbose mode enabled. Verbosity level: [blue]{verbose}[/blue]")
@@ -148,7 +153,8 @@ def convert(
                 verbose=verbose,
                 ignore_tags=ignore_tags,
                 status_tags=status_tags,
-                tag_prefix=tag_prefix or config.get("tag_prefix", "#on/"),
+                tag_prefix=tag_prefix or config.get("tag_prefix", "#on"),
+                status_prefix=status_prefix or config.get("status_prefix", "#status"),
                 convert_links=convert_links or config.get("convert_links", False),
                 yaml=yaml or config.get("yaml", False),
                 merge_entries=merge_entries or config.get("merge_entries", False),

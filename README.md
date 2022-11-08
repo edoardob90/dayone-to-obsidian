@@ -114,10 +114,11 @@ That said, the formatting can be adapted to one's purposes very easily. If you a
 
 ## Todo
 
-Features I'm considering:
+Features that might be implemented:
 
-- [x] Specify the vault destination folder to skip files that are already present
-- [x] Add possibility to read in options from a config file (ideally a `config.yaml`)
+- [x] ~~Specify the vault destination folder to skip files that are already present~~
+- [x] ~~Add possibility to read in options from a config file (ideally a `config.yaml`)~~
+- [ ] Support choosing which metadata fields are included in the YAML frontmatter (right now, only `location`, `places`, `dates`, and `tags` are added if `has_yaml` is set to `true` in the config file or the option `--yaml` is passed)
 - [ ] Add the possibility to customize metadata formatting (not sure to which template it should adhere)
 - [ ] Implement a copy with `rsync`
 - [ ] Auto-unzip of the exported journal
