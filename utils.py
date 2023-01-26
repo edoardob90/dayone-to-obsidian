@@ -3,21 +3,13 @@
 import json
 import re
 import shutil
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, Set, List
 
-import dateutil.parser
-import pytz
 from rich.progress import Progress
 
 from rich_utils import info_msg, verbose_msg, warn_msg
 from entry import Entry
-
-
-def capwords(string: str, sep: str = "") -> str:
-    """Capitalize the first letter of each word in a string"""
-    return sep.join(word[0].upper() + word[1:].lower() for word in string.split(" "))
 
 
 def process_journal(

@@ -116,7 +116,7 @@ class Entry:
 
         # Add any entra tags, if present
         if (extra_tags := kwargs.get("extra_tags")) is not None:
-            tags.extend(entry_tags)
+            tags.extend(extra_tags)
 
         self.metadata["tags"] = ", ".join(tags) if tags else ""
 
