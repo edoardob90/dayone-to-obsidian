@@ -1,5 +1,5 @@
 # pylint: disable=too-many-arguments,line-too-long,no-value-for-parameter
-"""import.py"""
+"""convert.py"""
 import pathlib
 
 import click
