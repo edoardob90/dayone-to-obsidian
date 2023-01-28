@@ -54,65 +54,71 @@ and `rsync` will re-create the exact folder structure.
 
 ### Config file
 
-If you want to import the same journal periodically, you ideally want to run the `convert.py` script with the same options. For this purpose, the script supports reading a YAML configuration file with the `-c/--config` option.
+**:warning: CHANGE:** Config file format is TOML, as it's natively supported (read-only) from **Python 3.11.x**.
 
-The YAML config file recognizes keywords with the same names as command-line options. Additionally, you can add a `metadata` key which contains any extra metadata field you might want to add to **each entry**. Added metadata adhere to the [syntax of the Dataview plugin](https://blacksmithgu.github.io/obsidian-dataview/annotation/add-metadata/).
+If you want to import the same journal periodically, you ideally want to run the `convert.py` script with the same options. For this purpose, the script supports reading a TOML configuration file with the `-c/--config` option.
+
+The config file recognizes keywords with the same names as command-line options. Additionally, you can add a `metadata` key which contains any extra metadata field you might want to add to **each entry**. Added metadata adhere to the [syntax of the Dataview plugin](https://blacksmithgu.github.io/obsidian-dataview/annotation/add-metadata/).
 
 Command-line options have precedence on the corresponding key-value in the config file, i.e., you can use a command-line option to override whatever value is set in the config file.
 
 The only keys which are **not** discarded when the equivalent command-line option is passed are `ignore_tags` and `status_tags`. In this case, the values passed on the command-line are **merged** with those found in the config file (if any).
 
-An example of a valid `config.yaml` is:
+An example of a valid `config.toml` is:
 
-```yaml
-vault_directory: ~/path/to/my/journal/folder/
-yaml: true
-merge_entries: true
-convert_links: false
-ignore_tags:
-  - First tag to ignore
-  - Another tag to ignore
-status_tags:
-  - Draft
-  - From email
-metadata:
-  up: 'A new metadata field named "up" will be added'
-  note: |
-    This note field can be a
-    multiline text.
-    It can also contain
+```toml
+vault_directory = "~/path/to/my/journal/folder/"
+yaml = true
+yaml_fields = ["Field 1", "Field 2"]
+merge_entries = true
+convert_links = false
+ignore_tags = [ "First tag to ignore", "Another tag to ignore" ]
+status_tags = [ "Draft", "From email" ]
 
-    empty lines, if that's what you want.
+[metadata]
+up = 'A new metadata field named "up" will be added'
+note = """
+This note field can be a
+multiline text.
+It can also contain
 
-  # Additional tags will be added to EVERY entry
-  # Make sure this is what you want
-  tags:
-    - Additional tag 1
-    - Additional tag 2
+empty lines, if that's what you want.
+"""
+tags = [ "Additional tag 1", "Additional tag 2" ]
 ```
-
-A few notes about the YAML format:
-
-- YAML doesn't require strings to be quoted. However, you might want to quote them to preserve their content as-is.
-- If a key has no value, Python assigns a default `None` value to that key.
 
 ### Metadata formatting
 
 The metadata formatting choices were dictated by purely personal criteria. In other words, the files are formatted the way I want them in my Obsidian vault.
 
-An example of a metadata block:
+The config file allows you to tweak two aspects of each entry's metadata:
 
-```
-dates:: <entry date (YYYY-MM-DD)>
-time:: <entry time (HH:MM, localized)>
-places:: <entry address>
-location:: <GPS coordinates (if present)>
-weather:: <weather conditions>
-tags:: #journal/journalName #prefix/tag1, #prefix/tag2 #status/statusTag1
-url:: [DayOne](dayone://view?entryId=<uuid>)
-```
+1. The `yaml_fields` (a list) key controls which fields are added to the YAML frontmatter (if enabled) and which ones are visible at the top of the entry.
+2. The `ignore` key (a list) in the `metadata` section which fields are completely discarded.
 
-That said, the formatting can be adapted to one's purposes very easily. If you are comfortable in editing the source code and have some experience with Python, take a look at the definition of the `Entry` class in the `entry.py` source file and adjust [the `__str__` method](https://github.com/edoardob90/dayone-to-obsidian/blob/ba3c1079a84dc7abe005d479c06eaa727c22bb29/entry.py#L28-L44) to change the string representation (i.e., how it will be written to file) of an entry.
+Currently, the available fields (names are **case insensitive**) read from Day One JSON are the following:
+
+- `created`: creation date & time (ISO 8601 format)
+- `place`: street, city, country
+- `lat`, `lon`: GPS coordinates
+- `weather`: weather conditions
+- `journal`: the journal name
+- `favorite`: whether the entry is starred
+- `url`: an external link to open the entry in Day One
+
+By default, `yaml_fields` is an **empty list**, which means that all the above metadata fields will be added at the top of each entry.
+
+For example: you want that each entry in Obsidian has only the tags as a visibile metadata fields, while you want to ignore the journal name and discard whether an entry is starred. You can achieve that with the following config file:
+
+```toml
+yaml = true
+yaml_fields = ["created", "place", "lat", "lon", "weather"]
+
+[metadata]
+ignore = ["journal", "favorite"]
+custom_field = "A custom metadata key"
+tags = ["Additional tag 1"]
+```
 
 ## Todo
 

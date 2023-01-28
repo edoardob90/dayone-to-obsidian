@@ -4,7 +4,7 @@ import json
 import re
 import shutil
 from pathlib import Path
-from typing import Dict, Set, List
+from typing import Dict, Set, List, Union
 
 from rich.progress import Progress
 
@@ -21,6 +21,7 @@ def process_journal(
     verbose: int,
     convert_links: bool,
     yaml: bool,
+    yaml_fields: Union[List, None],
     force: bool,
     merge_entries: bool,
     entries_sep: str,
@@ -63,6 +64,7 @@ def process_journal(
         # Are there additional tags in the config file?
         if metadata_ext is not None:
             extra_tags = metadata_ext.pop("tags", None)
+            ignore_fields = metadata_ext.pop("ignore", None)
 
         entry: Dict
         for entry in data["entries"]:
@@ -75,14 +77,19 @@ def process_journal(
                 ignore_tags=ignore_tags,
                 status_tags=status_tags,
                 journal_name=journal_name,
+                ignore_fields=ignore_fields,
             )
 
             # Add any other metadata field found in the config file
             if metadata_ext is not None:
                 new_entry.metadata.update(metadata_ext)
 
-            # Turn on YAML front matter, if requested
-            new_entry.has_yaml = yaml
+            # Handle YAML frontmatter
+            if yaml:
+                new_entry.has_yaml = True
+                # Add YAML fields, if any
+                if yaml_fields is not None:
+                    new_entry.yaml_fields = yaml_fields
 
             # Add body text if it exists (entries can have a "blank body" sometimes), after some tidying up
             entry_text: str

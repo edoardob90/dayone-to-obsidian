@@ -3,7 +3,7 @@
 import pathlib
 
 import click
-import yaml as Yaml
+import tomllib
 
 from rich_utils import info_msg, progress, verbose_msg, warn_msg
 from utils import process_journal
@@ -19,7 +19,7 @@ from utils import process_journal
     "-c",
     "config_file",
     type=click.Path(dir_okay=False, file_okay=True, path_type=pathlib.Path),
-    help="A YAML configuration file. Check the README for its syntax/options",
+    help="A TOML configuration file. Check the README for its syntax/options",
 )
 @click.option(
     "--vault-directory",
@@ -95,7 +95,7 @@ def convert(
     status_tags: tuple,
 ):
     """Converts DayOne entries into markdown files suitable to use as an Obsidian vault.
-    Each journal will end up in a sub-folder named after the file (e.g., Personal.json -> personal/). All JSON files
+    Each journal will end up in a sub-folder named after the file (e.g., Personal.json -> Personal/). All JSON files
     in the FOLDER will be processed, **except** those whose filename starts with a number. Prepend any number to those files you want to exclude.
     The FOLDER will also be the destination for converted markdown files. After conversion you can open this folder as a vault in Obsidian.
 
@@ -117,8 +117,8 @@ def convert(
     # Read the config file
     config = {}
     if config_file is not None and config_file.exists():
-        with config_file.open(encoding="utf-8") as file:
-            config: dict = Yaml.safe_load(file)
+        with config_file.open(mode="rb") as file:
+            config: dict = tomllib.load(file)
 
     # Build the list of tags to ignore
     if (tags_to_ignore := config.get("ignore_tags")) is not None and tags_to_ignore:
@@ -157,6 +157,7 @@ def convert(
                 status_prefix=status_prefix or config.get("status_prefix", "#status"),
                 convert_links=convert_links or config.get("convert_links", False),
                 yaml=yaml or config.get("yaml", False),
+                yaml_fields=config.get("yaml_fields", None),
                 merge_entries=merge_entries or config.get("merge_entries", False),
                 entries_sep=entries_sep or config.get("entries_sep", "---\n---"),
                 metadata_ext=config.get("metadata", None),

@@ -1,15 +1,25 @@
 """A class to reprensent a DayOne entry"""
 
-from attrs import define, field
-from pathlib import Path
-import pytz
-import dateutil
 import datetime
+from pathlib import Path
+from string import whitespace
+from typing import Any, Union
+
+import pytz
+from attrs import define, field
+from dateutil.parser import isoparse
 
 
 def capwords(string: str, sep: str = "") -> str:
     """Capitalize the first letter of each word in a string"""
     return sep.join(word[0].upper() + word[1:].lower() for word in string.split(" "))
+
+
+def quote(value: Any) -> Union[Any, str]:
+    """Quote if `value` is a string containing whitespaces"""
+    if isinstance(value, str) and any(c in value for c in whitespace):
+        return '"{}"'.format(value)
+    return value
 
 
 @define
@@ -20,6 +30,9 @@ class Entry:
     creation_date: datetime.datetime = field(default=None, eq=False)
     local_date: datetime.datetime = field(default=None, eq=False)
     has_yaml: bool = field(default=False, eq=False)
+    yaml_fields: list = field(
+        factory=list, eq=False, converter=lambda x: list(map(str.lower, x))
+    )
     yaml: str = field(default="", eq=False)
     metadata: dict = field(factory=dict, eq=False)
     text: str = field(default="", eq=False)
@@ -27,52 +40,59 @@ class Entry:
 
     def __str__(self) -> str:
         if self.has_yaml:
-            self.yaml = "---\n{yaml_block}\n---\n\n".format(
+            self.yaml = "---\n{yaml_block}\n---\n".format(
                 yaml_block="\n".join(
                     [
-                        f"{name.lower().replace(' ', '_')}: {value}"
+                        f"{name.lower().replace(' ', '-')}: {quote(value)}"
                         for name, value in self.metadata.items()
-                        if name in ("location", "places", "dates", "tags")
+                        if name in self.yaml_fields
                     ]
                 )
             )
 
-        metadata = [f"{key}:: {value}" for key, value in self.metadata.items()]
+        metadata_str = "\n".join(
+            [
+                f"{key}:: {value}"
+                for key, value in self.metadata.items()
+                if key not in self.yaml_fields
+            ]
+        )
 
-        return "{yaml}{metadata}\n\n{text}\n".format(
-            yaml=self.yaml, metadata="\n".join(metadata), text=self.text, uuid=self.uuid
+        return "{yaml}\n{metadata}\n\n{text}\n".format(
+            yaml=self.yaml, metadata=metadata_str, text=self.text
         )
 
     def __retreive_metadata(self, entry: dict, **kwargs: dict) -> None:
-        """Retreive and set metadata from a JSON entry"""
-        # UUID and DayOne URL
-        self.metadata["url"] = (
-            f"[DayOne](dayone://view?entryId={self.uuid})"
-            if self.uuid is not None
-            else ""
-        )
+        """
+        Retreive and set metadata from a JSON entry
 
+        Available metadata fields:
+            - created: creation date & time (ISO 8601 format)
+            - place: street, city, country
+            - lat, lon: GPS coordinates
+            - weather: weather conditions
+            - journal: journal name
+            - favorite: whether the entry is starred
+            - url: external link to the entry in Day One
+        """
         # Date and (local) time
         self.local_date = self.creation_date.astimezone(
             pytz.timezone(entry["timeZone"])
         )
-        self.metadata["dates"] = self.local_date.strftime("%Y-%m-%d")
-        self.metadata["time"] = self.local_date.strftime("%H:%M:%S")
+        self.metadata["created"] = self.local_date.isoformat()
 
         # Place and GPS location
-        # TODO: should we print a warning (if verbose mode) when an entry doens't have a location?
         if (entry_location := entry.get("location")) is not None:
             places = []
             for key in ("placeName", "localityName", "administrativeArea", "country"):
                 if (place := entry_location.get(key)) is not None:
                     places.append(place)
 
-            self.metadata["places"] = ", ".join(places)
+            self.metadata["place"] = ", ".join(places)
 
-            if "latitude" in entry_location and "longitude" in entry_location:
-                self.metadata[
-                    "location"
-                ] = f"{entry_location.get('latitude')}, {entry_location.get('longitude')}"
+            for gps in ("latitude", "longitude"):
+                # Save location as "lat" and "lon", if present
+                self.metadata[gps[:3]] = entry_location.get(gps, None)
 
         # Weather info
         if "weather" in entry and all(
@@ -111,8 +131,12 @@ class Entry:
                     )
                 )
 
-        # Mark favorite entries with a
+        # Mark favorite entries
         self.metadata["favorite"] = True if entry.get("starred") else False
+
+        # UUID and DayOne URL
+        if self.uuid is not None:
+            self.metadata["url"] = f"[DayOne](dayone://view?entryId={self.uuid})"
 
         # Add any entra tags, if present
         if (extra_tags := kwargs.get("extra_tags")) is not None:
@@ -120,10 +144,11 @@ class Entry:
 
         self.metadata["tags"] = ", ".join(tags) if tags else ""
 
-        # TODO: is a location tag (#places/country/region/town) really needed?
-        # Add a tag for the location to make places searchable in Obsidian
-        # if location:
-        #     tags.append(f"#places/{'/'.join(map(capwords, location[-1:0:-1]))}")
+        # Discard ignored fields, if any
+        if (ignore_fields := kwargs.get("ignore_fields")) is not None:
+            assert isinstance(ignore_fields, list), "ignore_fields must be a list!"
+            for key in ignore_fields:
+                self.metadata.pop(key, None)
 
     @classmethod
     def from_json_entry(cls, json_entry: dict, **kwargs) -> "Entry":
@@ -135,7 +160,7 @@ class Entry:
 
         # Get entry's UUID and the creation date
         uuid = json_entry.get("uuid")
-        creation_date = dateutil.parser.isoparse(json_entry.get("creationDate"))
+        creation_date = isoparse(json_entry.get("creationDate"))
         # Initialize the new entry
         entry = cls(uuid=uuid, creation_date=creation_date)
         # Populate entry's metadata
