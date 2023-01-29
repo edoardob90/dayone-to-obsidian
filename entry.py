@@ -58,7 +58,7 @@ class Entry:
             ]
         )
 
-        return "{yaml}\n{metadata}\n\n{text}\n".format(
+        return "{yaml}\n{metadata}\n\n---\n\n{text}\n".format(
             yaml=self.yaml, metadata=metadata_str, text=self.text
         )
 
@@ -142,7 +142,9 @@ class Entry:
         if (extra_tags := kwargs.get("extra_tags")) is not None:
             tags.extend(extra_tags)
 
-        self.metadata["tags"] = ", ".join(tags) if tags else ""
+        # Add tags to metadata, if not empty
+        if tags:
+            self.metadata["tags"] = ", ".join(tags)
 
         # Discard ignored fields, if any
         if (ignore_fields := kwargs.get("ignore_fields")) is not None:

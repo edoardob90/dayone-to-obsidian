@@ -76,15 +76,19 @@ ignore_tags = [ "First tag to ignore", "Another tag to ignore" ]
 status_tags = [ "Draft", "From email" ]
 
 [metadata]
-up = 'A new metadata field named "up" will be added'
-note = """
+ignore = [ "Ignore this field", "And this" ]
+tags = [ "Additional tag 1", "Additional tag 2" ]
+
+# Extra metadata fields can be added as well
+[metadata.extra]
+up = "A new metadata field named \"up\" will be added"
+note = '''
 This note field can be a
 multiline text.
 It can also contain
 
 empty lines, if that's what you want.
-"""
-tags = [ "Additional tag 1", "Additional tag 2" ]
+'''
 ```
 
 ### Metadata formatting
@@ -116,8 +120,10 @@ yaml_fields = ["created", "place", "lat", "lon", "weather"]
 
 [metadata]
 ignore = ["journal", "favorite"]
-custom_field = "A custom metadata key"
 tags = ["Additional tag 1"]
+
+[metadata.extra]
+my_custom_field = "My custom value"
 ```
 
 ## Todo

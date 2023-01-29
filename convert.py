@@ -101,10 +101,17 @@ def convert(
 
     FOLDER is where your DayOne JSON exports reside and where the converted markdown files will be written.
     """
+    # Read the config file
+    config = {}
+    if config_file is not None and config_file.exists():
+        with config_file.open(mode="rb") as file:
+            config: dict = tomllib.load(file)
+
+    # Some verbose logging before we start
     if verbose != 0:
         verbose_msg(f"Verbose mode enabled. Verbosity level: [blue]{verbose}[/blue]")
 
-        if yaml:
+        if yaml or config.get("yaml", False):
             info_msg("Each entry will have a YAML frontmatter")
         else:
             info_msg("No YAML frontmatter will be added")
@@ -113,12 +120,6 @@ def convert(
             info_msg(
                 ":arrows_clockwise: Converting Day One internal links to Obsidian (when possible)"
             )
-
-    # Read the config file
-    config = {}
-    if config_file is not None and config_file.exists():
-        with config_file.open(mode="rb") as file:
-            config: dict = tomllib.load(file)
 
     # Build the list of tags to ignore
     if (tags_to_ignore := config.get("ignore_tags")) is not None and tags_to_ignore:
@@ -140,6 +141,7 @@ def convert(
 
     # Process each JSON journal file in the input folder
     info_msg("[bold green]Processing journals...")
+
     if verbose > 0:
         warn_msg("Journal filenames with a leading number will be ignored!")
 

@@ -63,8 +63,8 @@ def process_journal(
 
         # Are there additional tags in the config file?
         if metadata_ext is not None:
-            extra_tags = metadata_ext.pop("tags", None)
-            ignore_fields = metadata_ext.pop("ignore", None)
+            extra_tags = metadata_ext.get("tags", None)
+            ignore_fields = metadata_ext.get("ignore", None)
 
         entry: Dict
         for entry in data["entries"]:
@@ -82,7 +82,7 @@ def process_journal(
 
             # Add any other metadata field found in the config file
             if metadata_ext is not None:
-                new_entry.metadata.update(metadata_ext)
+                new_entry.metadata.update(metadata_ext.get("extra", {}))
 
             # Handle YAML frontmatter
             if yaml:
