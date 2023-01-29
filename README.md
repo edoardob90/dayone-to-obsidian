@@ -20,7 +20,7 @@ Check the `--help` option to get a description of the new features. In summary:
 - Run `poetry install`
 - Run `poetry run python convert.py path/to/dayone/export/folder`
 
-You can also run **without Poetry**: you can simply create a virtual environment and run `pip install -r requirements.txt` since the script requires only a couple of packages not in Python standard library.
+You can also run **without Poetry**: you can simply create a virtual environment and run `pip install -r requirements.txt` since the script requires only a couple of packages not in Python standard library. If you **don't use** Poetry, make sure you have Python **3.11.x**.
 
 ## Day One version
 
@@ -54,11 +54,11 @@ and `rsync` will re-create the exact folder structure.
 
 ### Config file
 
-**:warning: CHANGE:** Config file format is TOML, as it's natively supported (read-only) from **Python 3.11.x**.
+The config file format is TOML as it's natively supported (read-only) from **Python 3.11.x**, which is now the minimum required version of the script.
 
 If you want to import the same journal periodically, you ideally want to run the `convert.py` script with the same options. For this purpose, the script supports reading a TOML configuration file with the `-c/--config` option.
 
-The config file recognizes keywords with the same names as command-line options. Additionally, you can add a `metadata` key which contains any extra metadata field you might want to add to **each entry**. Added metadata adhere to the [syntax of the Dataview plugin](https://blacksmithgu.github.io/obsidian-dataview/annotation/add-metadata/).
+The config file recognizes keywords with the same names as command-line options. In the `[metadata]` key you can specify which fields to print and discard (see below "Metadata formatting"). Additionally, you can add a `[metadata.extra]` key which contains any extra metadata field you might want to add to **each entry**. Added metadata adhere to the [syntax of the Dataview plugin](https://blacksmithgu.github.io/obsidian-dataview/annotation/add-metadata/).
 
 Command-line options have precedence on the corresponding key-value in the config file, i.e., you can use a command-line option to override whatever value is set in the config file.
 
@@ -82,6 +82,10 @@ tags = [ "Additional tag 1", "Additional tag 2" ]
 # Extra metadata fields can be added as well
 [metadata.extra]
 up = "A new metadata field named \"up\" will be added"
+# Keys can only contain letters, numbers, underscores, and dashes
+# If you need whitespaces or other chars you must "quote them"
+"custom field with spaces" = "Another custom value"
+# Three single quotes can surround a multiline literal string
 note = '''
 This note field can be a
 multiline text.
@@ -90,6 +94,8 @@ It can also contain
 empty lines, if that's what you want.
 '''
 ```
+
+Read more about the [TOML syntax](https://github.com/toml-lang/toml).
 
 ### Metadata formatting
 
@@ -128,11 +134,9 @@ my_custom_field = "My custom value"
 
 ## Todo
 
-Features that I'm considering:
-
 - [x] ~~Specify the vault destination folder to skip files that are already present~~
 - [x] ~~Add possibility to read in options from a config file (ideally a `config.yaml`)~~
-- [ ] Support choosing which metadata fields are included in the YAML frontmatter (right now, only `location`, `places`, `dates`, and `tags` are added if `has_yaml` is set to `true` in the config file or the option `--yaml` is passed)
+- [x] ~~Support choosing which metadata fields are included in the YAML frontmatter (right now, only `location`, `places`, `dates`, and `tags` are added if `has_yaml` is set to `true` in the config file or the option `--yaml` is passed)~~
 - [ ] Add the possibility to customize metadata formatting (not sure to which template it should adhere)
 - [ ] Implement a copy with `rsync`
 - [ ] Auto-unzip of the exported journal
