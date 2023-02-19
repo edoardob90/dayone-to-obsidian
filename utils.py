@@ -5,6 +5,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import Dict, Set, List, Union
+from datetime import datetime
 
 from rich.progress import Progress
 
@@ -103,7 +104,7 @@ def process_journal(
                 # Fixes multi-line ```code blocks```
                 # DayOne breaks these block in many lines with a triple ``` delimiters.
                 # This results in a bad formatting of the Markdown output.
-                new_text = re.sub(r"```\s+```", "", new_text, flags=re.MULTILINE)
+                new_text = re.sub(r"```\s+```", "", new_text, re.MULTILINE)
 
                 # Handling attachments: photos, audios, videos, and documents (PDF)
                 if "photos" in entry:
@@ -111,7 +112,8 @@ def process_journal(
                     for photo in entry["photos"]:
                         image_type = photo["type"]
                         original_photo_file = (
-                            base_folder / "photos" / f"{photo['md5']}.{image_type}"
+                            base_folder / "photos" /
+                            f"{photo['md5']}.{image_type}"
                         )
                         renamed_photo_file = (
                             base_folder
@@ -134,7 +136,8 @@ def process_journal(
                 if "pdfAttachments" in entry:
                     # Correct photo pdf links. Similar to what is done on photos
                     for pdf in entry["pdfAttachments"]:
-                        original_pdf_file = base_folder / "pdfs" / f"{pdf['md5']}.pdf"
+                        original_pdf_file = base_folder / \
+                            "pdfs" / f"{pdf['md5']}.pdf"
                         renamed_pdf_file = (
                             base_folder / "pdfs" / f"{pdf['identifier']}.pdf"
                         )
@@ -157,7 +160,8 @@ def process_journal(
                         # AAC files are very often saved with .m4a extension
                         audio_format = "m4a"
                         original_audio_file = (
-                            base_folder / "audios" / f"{audio['md5']}.{audio_format}"
+                            base_folder / "audios" /
+                            f"{audio['md5']}.{audio_format}"
                         )
                         renamed_audio_file = (
                             base_folder
@@ -181,7 +185,8 @@ def process_journal(
                     for video in entry["videos"]:
                         video_format = video["type"]
                         original_video_file = (
-                            base_folder / "videos" / f"{video['md5']}.{video_format}"
+                            base_folder / "videos" /
+                            f"{video['md5']}.{video_format}"
                         )
                         renamed_video_file = (
                             base_folder
@@ -201,6 +206,7 @@ def process_journal(
                             new_text,
                         )
 
+                # Save the text of the new entry
                 new_entry.text = new_text
 
             # Save entries organised by year, year-month, year-month-day.md
@@ -233,19 +239,23 @@ def process_journal(
                         warn_msg(
                             f"Found another entry with the same date '{target_file.stem}'"
                         )
+                    # TODO: merging entries could be improved
+                    # https://github.com/edoardob90/dayone-to-obsidian/issues/4#issue-1590366935
                     if merge_entries:
                         merged_entries += 1
                         prev_entry: Entry = entries.pop(target_file.stem)
-                        del prev_entry.metadata["dates"]
+                        # del prev_entry.metadata["dates"]
                         new_entry.text += f"\n\n{entries_sep}\n\n{prev_entry}"
                     else:
                         # File exists, need to find the next in sequence and append alpha character marker
                         index = 97  # ASCII a
-                        target_file = month_dir / f"{file_date_format}{chr(index)}.md"
+                        target_file = month_dir / \
+                            f"{file_date_format}{chr(index)}.md"
                         while target_file.stem in entries:
                             index += 1
                             target_file = (
-                                month_dir / f"{file_date_format}{chr(index)}.md"
+                                month_dir /
+                                f"{file_date_format}{chr(index)}.md"
                             )
                         new_entry.output_file = target_file
 
@@ -263,24 +273,27 @@ def process_journal(
             progress.update(task, advance=1)
 
     # Rename JSON file to avoid reprocessing if the script is run twice
-    num_files = len(list(base_folder.glob(f"*{journal.stem}.json")))
-    journal.rename(base_folder / f"{num_files - 1}_{journal.name}")
-
-    def replace_link(match: re.Match) -> str:
-        """A replacement function for dayone internal links"""
-        link_text, uuid = match.groups()
-        if uuid in uuid_to_file:
-            return f"[[{uuid_to_file[uuid]}|{link_text}]]"
-        return f"^[Linked entry with UUID `{uuid}` not found]"
+    # Processed JSON file will have a date & time prepended
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    journal.rename(base_folder / f"{timestamp}_{journal.name}")
 
     entry: Entry
     for entry in entries.values():
         if convert_links:
             # Step 2 to replace dayone internal links: we must do a second iteration over entries
             # The regex to match a dayone internal link: [link_text](dayone://view?EntryId=uuid)
+
+            def replace_link(match: re.Match) -> str:
+                """Return an internal Obsidian link. If `uuid` is not found, return a DayOne link"""
+                link_text, uuid = match.groups()
+                if uuid in uuid_to_file:
+                    return f"[[{uuid_to_file[uuid]}|{link_text}]]"
+                return f"[{link_text}](dayone://view?entryId={uuid})"
+
             entry.text = re.sub(
-                r"\[(.*?)\]\(dayone2?:\/\/.*?([A-F0-9]+)\)", replace_link, entry.text
-            )
+                r"\[(.*?)\]\(dayone:\/\/.*?([A-F0-9]+)\)", replace_link, entry.text)
+
+        # Write out the current entry to a file
         entry.dump()
 
     info_msg(
