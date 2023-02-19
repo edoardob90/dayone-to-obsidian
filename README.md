@@ -54,7 +54,7 @@ and `rsync` will re-create the exact folder structure.
 
 ### Config file
 
-The config file format is TOML as it's natively supported (read-only) from **Python 3.11.x**, which is now the minimum required version of the script.
+The config file format is TOML as it's natively supported (read-only) from **Python 3.11.x**, which is now the minimum required version of the script. You can quickly convert your previous `config.yaml` with this [online tool](https://transform.tools/yaml-to-toml).
 
 If you want to import the same journal periodically, you ideally want to run the `convert.py` script with the same options. For this purpose, the script supports reading a TOML configuration file with the `-c/--config` option.
 
