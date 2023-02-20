@@ -103,8 +103,8 @@ The metadata formatting choices were dictated by purely personal criteria. In ot
 
 The config file allows you to tweak two aspects of each entry's metadata:
 
-1. The `yaml_fields` (a list) key controls which fields are added to the YAML frontmatter (if enabled) and which ones are visible at the top of the entry.
-2. The `ignore` key (a list) in the `metadata` section which fields are completely discarded.
+1. The `yaml_fields` (a list) key controls which fields are added to the YAML frontmatter (if enabled) and which ones are visible at the top of the entry (following Dataview's syntax, e.g., `field_name:: field value`).
+2. The `ignore` key (a list) in the `metadata` section: fields listed are completely discarded.
 
 Currently, the available fields (names are **case insensitive**) read from Day One JSON are the following:
 
