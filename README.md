@@ -18,29 +18,31 @@ Check the `--help` option to get a description of the new features. In summary:
 
 - Clone the repository
 - Run `poetry install`
-- Run `poetry run python import.py path/to/folder`
+- Run `poetry run python convert.py path/to/dayone/export/folder`
 
-You can also run **without Poetry**: you can simply create a virtual environment and run `pip install -r requirements.txt` since the script requires only a couple of packages not in Python standard library.
+You can also run **without Poetry**: you can simply create a virtual environment and run `pip install -r requirements.txt` since the script requires only a couple of packages not in Python standard library. If you **don't use** Poetry, make sure you have Python **3.11.x**.
 
 ## Day One version
 
 This script works with journals exported as JSON from DayOne, version **7.16** (build 1421) as of September, 21st 2022.
 
-## Setup
+## Usage
 
-| :warning: WARNING                                  |
-| :------------------------------------------------- |
-| This script deletes folders if run a second time   |
-| You are responsible for ensuring against data loss |
-| This script renames files (namely, media files)    |
+| :warning: WARNING                                    |
+| :--------------------------------------------------- |
+| This script deletes folders if run a second time     |
+| You are responsible for ensuring against data loss   |
+| This script renames files (media files, JSON export) |
 
 1. Export your journal from [Day One in JSON format](https://help.dayoneapp.com/en/articles/440668-exporting-entries)
 2. Expand that zip file
 3. Run the script as shown above
-4. Check results in Obsidian by opening the folder as a vault
-5. If happy, move each _journal name_, _photos_, and _pdfs_ folders to another vault.
+4. Check the results in Obsidian by opening the folder as a vault
+5. Move the _journal name_ and attachments folders to another (or your) vault.
 
-_Suggestion:_ to move the outputted Markdown files, it's convenient to use `rsync`. For example,
+When done, the script renames the journal JSON file by prepending a number, starting with 0. Renamed JSON files will be **ignored** if the script is run another time.
+
+_Suggestion:_ to move the resulting Markdown files, it's convenient to use `rsync`. For example,
 
 ```bash
 rsync -R -av --inplace --update export_folder/ vault_folder/
@@ -52,72 +54,89 @@ and `rsync` will re-create the exact folder structure.
 
 ### Config file
 
-If you want to import the same journal periodically, you ideally want to run the `import.py` script with the same options. For this purpose, the script supports reading a YAML configuration file with the `-c/--config` option.
+The config file format is TOML as it's natively supported (read-only) from **Python 3.11.x**, which is now the minimum required version of the script. You can quickly convert your previous `config.yaml` with this [online tool](https://transform.tools/yaml-to-toml).
 
-The YAML config file recognizes keywords with the same names as command-line options. Additionally, you can add a `metadata` key which contains any extra metadata field you might want to add to **each entry**.
+If you want to import the same journal periodically, you ideally want to run the `convert.py` script with the same options. For this purpose, the script supports reading a TOML configuration file with the `-c/--config` option.
+
+The config file recognizes keywords with the same names as command-line options. In the `[metadata]` key you can specify which fields to print and discard (see below "Metadata formatting"). Additionally, you can add a `[metadata.extra]` key which contains any extra metadata field you might want to add to **each entry**. Added metadata adhere to the [syntax of the Dataview plugin](https://blacksmithgu.github.io/obsidian-dataview/annotation/add-metadata/).
 
 Command-line options have precedence on the corresponding key-value in the config file, i.e., you can use a command-line option to override whatever value is set in the config file.
 
-The only keys which are **not** discarded when the equivalent command-line option is passed are `ignore_tags` and `status_tags`. In this case, the values passed when invoking the script are **merged** with those found in the config file (if any).
+The only keys which are **not** discarded when the equivalent command-line option is passed are `ignore_tags` and `status_tags`. In this case, the values passed on the command-line are **merged** with those found in the config file (if any).
 
-An example of a valid `config.yaml` is:
+An example of a valid `config.toml` is:
 
-```yaml
-vault_directory: ~/path/to/my/journal/folder/
-yaml: true
-merge_entries: true
-convert_links: false
-ignore_tags:
-  - First tag to ignore
-  - Another tag to ignore
-status_tags:
-  - Draft
-  - From email
-metadata:
-  up: 'A new metadata field named "up" will be added'
-  note: |
-    This note field can be a
-    multiline text.
-    It can also contain
+```toml
+vault_directory = "~/path/to/my/journal/folder/"
+yaml = true
+yaml_fields = ["Field 1", "Field 2"]
+merge_entries = true
+convert_links = false
+ignore_tags = [ "First tag to ignore", "Another tag to ignore" ]
+status_tags = [ "Draft", "From email" ]
 
-    empty lines, if that's what you want.
+[metadata]
+ignore = [ "Ignore this field", "And this" ]
+tags = [ "Additional tag 1", "Additional tag 2" ]
 
-  # Additional tags will be added to EVERY entry.
-  # Make sure this is what you want.
-  tags:
-    - Additional tag 1
-    - Additional tag 2
+# Extra metadata fields can be added as well
+[metadata.extra]
+up = "A new metadata field named \"up\" will be added"
+# Keys can only contain letters, numbers, underscores, and dashes
+# If you need whitespaces or other chars you must "quote them"
+"custom field with spaces" = "Another custom value"
+# Three single quotes can surround a multiline literal string
+note = '''
+This note field can be a
+multiline text.
+It can also contain
+
+empty lines, if that's what you want.
+'''
 ```
 
-A few notes about the YAML format:
-
-- YAML doesn't require strings to be quoted. However, you might want to quote them to preserve their content as-is.
-- If you leave a key with no value, Python will assign a default `None` to that key.
+Read more about the [TOML syntax](https://github.com/toml-lang/toml).
 
 ### Metadata formatting
 
 The metadata formatting choices were dictated by purely personal criteria. In other words, the files are formatted the way I want them in my Obsidian vault.
 
-An example of a metadata block:
+The config file allows you to tweak two aspects of each entry's metadata:
 
-```
-dates:: <entry date (YYYY-MM-DD)>
-time:: <entry time (HH:MM, localized)>
-places:: <entry address>
-location:: <GPS coordinates (if present)>
-weather:: <weather conditions>
-tags:: #journal/journalName #prefix/tag1, #prefix/tag2 #status/statusTag1 #place/country/region/town
-url:: [DayOne](dayone://view?entryId=<uuid>)
-```
+1. The `yaml_fields` (a list) key controls which fields are added to the YAML frontmatter (if enabled) and which ones are visible at the top of the entry (following Dataview's syntax, e.g., `field_name:: field value`).
+2. The `ignore` key (a list) in the `metadata` section: fields listed are completely discarded.
 
-That said, the formatting can be adapted to one's purposes very easily. If you are comfortable in editing the source code and have some experience with Python, take a look at the definition of the `Entry` class at the beginning of `utils.py` and adjust the `__str__` method to change the formatting.
+Currently, the available fields (names are **case insensitive**) read from Day One JSON are the following:
+
+- `created`: creation date & time (ISO 8601 format)
+- `place`: street, city, country
+- `lat`, `lon`: GPS coordinates
+- `weather`: weather conditions
+- `journal`: the journal name
+- `favorite`: whether the entry is starred
+- `url`: an external link to open the entry in Day One
+
+By default, `yaml_fields` is an **empty list**, which means that all the above metadata fields will be added at the top of each entry.
+
+For example: you want that each entry in Obsidian has only the tags as a visibile metadata fields, while you want to ignore the journal name and discard whether an entry is starred. You can achieve that with the following config file:
+
+```toml
+yaml = true
+yaml_fields = ["created", "place", "lat", "lon", "weather"]
+
+[metadata]
+ignore = ["journal", "favorite"]
+tags = ["Additional tag 1"]
+
+[metadata.extra]
+my_custom_field = "My custom value"
+```
 
 ## Todo
 
-Features I'm considering:
-
-- [x] Specify the vault destination folder to skip files that are already present
-- [x] Add possibility to read in options from a config file (ideally a `config.yaml`)
+- [x] ~~Specify the vault destination folder to skip files that are already present~~
+- [x] ~~Add possibility to read in options from a config file (ideally a `config.yaml`)~~
+- [x] ~~Support choosing which metadata fields are included in the YAML frontmatter (right now, only `location`, `places`, `dates`, and `tags` are added if `has_yaml` is set to `true` in the config file or the option `--yaml` is passed)~~
 - [ ] Add the possibility to customize metadata formatting (not sure to which template it should adhere)
 - [ ] Implement a copy with `rsync`
 - [ ] Auto-unzip of the exported journal

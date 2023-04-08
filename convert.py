@@ -1,9 +1,9 @@
 # pylint: disable=too-many-arguments,line-too-long,no-value-for-parameter
-"""import.py"""
+"""convert.py"""
 import pathlib
 
 import click
-import yaml as Yaml
+import tomllib
 
 from rich_utils import info_msg, progress, verbose_msg, warn_msg
 from utils import process_journal
@@ -19,7 +19,7 @@ from utils import process_journal
     "-c",
     "config_file",
     type=click.Path(dir_okay=False, file_okay=True, path_type=pathlib.Path),
-    help="A YAML configuration file. Check the README for its syntax/options",
+    help="A TOML configuration file. Check the README for its syntax/options",
 )
 @click.option(
     "--vault-directory",
@@ -46,7 +46,12 @@ from utils import process_journal
 )
 @click.option(
     "--tag-prefix",
-    help="Prefix to add as part of the tag name for sub-tags. Default is '#on'",
+    help="Prefix to add as part of the tag name for sub-tags. Default is '#on/'",
+    default=None,
+)
+@click.option(
+    "--status-prefix",
+    help="Prefix for status tags. Default is '#status/'",
     default=None,
 )
 @click.option(
@@ -79,6 +84,7 @@ def convert(
     config_file: click.Path,
     verbose: int,
     tag_prefix: str,
+    status_prefix: str,
     vault_directory: click.Path,
     force: bool,
     convert_links: bool,
@@ -89,17 +95,23 @@ def convert(
     status_tags: tuple,
 ):
     """Converts DayOne entries into markdown files suitable to use as an Obsidian vault.
-    Each journal will end up in a sub-folder named after the file (e.g.: Admin.json -> admin/). All JSON files
-    in the FOLDER will be processed, remove those you don't want processed. The FOLDER will also be the destination
-    for converted markdown files. After conversion you can open this folder as a vault in Obsidian. This is done
-    to prevent accidental modification of an existing vault.
+    Each journal will end up in a sub-folder named after the file (e.g., Personal.json -> Personal/). All JSON files
+    in the FOLDER will be processed, **except** those whose filename starts with a number. Prepend any number to those files you want to exclude.
+    The FOLDER will also be the destination for converted markdown files. After conversion you can open this folder as a vault in Obsidian.
 
-    FOLDER is where your DayOne exports reside and where the converted markdown files will be written.
+    FOLDER is where your DayOne JSON exports reside and where the converted markdown files will be written.
     """
+    # Read the config file
+    config = {}
+    if config_file is not None and config_file.exists():
+        with config_file.open(mode="rb") as file:
+            config: dict = tomllib.load(file)
+
+    # Some verbose logging before we start
     if verbose != 0:
         verbose_msg(f"Verbose mode enabled. Verbosity level: [blue]{verbose}[/blue]")
 
-        if yaml:
+        if yaml or config.get("yaml", False):
             info_msg("Each entry will have a YAML frontmatter")
         else:
             info_msg("No YAML frontmatter will be added")
@@ -108,12 +120,6 @@ def convert(
             info_msg(
                 ":arrows_clockwise: Converting Day One internal links to Obsidian (when possible)"
             )
-
-    # Read the config file
-    config = {}
-    if config_file is not None and config_file.exists():
-        with config_file.open(encoding="utf-8") as file:
-            config: dict = Yaml.safe_load(file)
 
     # Build the list of tags to ignore
     if (tags_to_ignore := config.get("ignore_tags")) is not None and tags_to_ignore:
@@ -135,6 +141,7 @@ def convert(
 
     # Process each JSON journal file in the input folder
     info_msg("[bold green]Processing journals...")
+
     if verbose > 0:
         warn_msg("Journal filenames with a leading number will be ignored!")
 
@@ -148,9 +155,11 @@ def convert(
                 verbose=verbose,
                 ignore_tags=ignore_tags,
                 status_tags=status_tags,
-                tag_prefix=tag_prefix or config.get("tag_prefix", "#on/"),
+                tag_prefix=tag_prefix or config.get("tag_prefix", "#on"),
+                status_prefix=status_prefix or config.get("status_prefix", "#status"),
                 convert_links=convert_links or config.get("convert_links", False),
                 yaml=yaml or config.get("yaml", False),
+                yaml_fields=config.get("yaml_fields", None),
                 merge_entries=merge_entries or config.get("merge_entries", False),
                 entries_sep=entries_sep or config.get("entries_sep", "---\n---"),
                 metadata_ext=config.get("metadata", None),

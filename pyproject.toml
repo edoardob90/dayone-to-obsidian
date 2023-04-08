@@ -5,14 +5,13 @@ description = ""
 authors = ["Arnaud Limbourg <arnaud@limbourg.com>", "Edoardo Baldi <edoardob90@gmail.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.11"
 pytk = "^0.0.2"
 pytz = "^2021.3"
 python-dateutil = "^2.8.2"
 click = "^8.0.4"
 rich = "^12.0.1"
 attrs = "^22.1.0"
-pyyaml = "^6.0"
 black = "^22.10.0"
 
 [tool.poetry.dev-dependencies]

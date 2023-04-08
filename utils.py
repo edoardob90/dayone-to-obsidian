@@ -3,174 +3,14 @@
 import json
 import re
 import shutil
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, Set, List
+from typing import Dict, Set, List, Union
+from datetime import datetime
 
-import dateutil.parser
-import pytz
-from attrs import define, field
 from rich.progress import Progress
 
 from rich_utils import info_msg, verbose_msg, warn_msg
-
-
-@define
-class Entry:
-    """A single journal entry"""
-
-    uuid: str = field(default=None, eq=True)
-    has_yaml: bool = field(default=False, eq=False)
-    yaml: str = field(default="", eq=False)
-    metadata: dict = field(factory=dict, eq=False)
-    text: str = field(default="", eq=False)
-    output_file: Path = field(default=None, eq=False)
-
-    def __str__(self) -> str:
-        if self.has_yaml:
-            self.yaml = "---\n{yaml_block}\n---\n\n".format(
-                yaml_block="\n".join(
-                    [
-                        f"{name.lower().replace(' ', '_')}: {value}"
-                        for name, value in self.metadata.items()
-                        if name in ("location", "places", "dates", "tags")
-                    ]
-                )
-            )
-
-        metadata = [f"{key}:: {value}" for key, value in self.metadata.items()]
-
-        return "{yaml}{metadata}\n\n{text}\n".format(
-            yaml=self.yaml, metadata="\n".join(metadata), text=self.text, uuid=self.uuid
-        )
-
-    @classmethod
-    def from_metadata(cls, metadata: dict) -> "Entry":
-        """Create a new `Entry` from a metadata dictionary"""
-        if not isinstance(metadata, dict):
-            raise TypeError(
-                f"Metadata must be of `dict` type, instead of {type(metadata)}."
-            )
-
-        entry = cls(uuid=metadata.pop("uuid", None), metadata=metadata)
-
-        if entry.uuid is not None:
-            entry.metadata["url"] = f"[DayOne](dayone://view?entryId={entry.uuid})"
-
-        return entry
-
-    def dump(self) -> None:
-        """Write out entry to a file"""
-        if self.output_file is None:
-            raise RuntimeError("Entry output file is undefined!")
-        with self.output_file.open("w", encoding="utf-8") as file:
-            file.write(f"{self}")
-
-
-def capwords(string: str, sep: str = "") -> str:
-    """Capitalize the first letter of each word in a string"""
-    return sep.join(word[0].upper() + word[1:].lower() for word in string.split(" "))
-
-
-# TODO: refactor this function into a method of the Entry class
-def retrieve_metadata(
-    entry: Dict,
-    local_date: datetime,
-    tag_prefix: str,
-    ignore_tags: Set,
-    status_tags: Set,
-    extra_tags: List,
-    verbose: int,
-    journal_name: str,
-) -> Dict:
-    """Fetch the metadata of a single journal entry"""
-    metadata = {}
-    metadata["uuid"] = entry["uuid"]
-
-    # Add raw create datetime adjusted for timezone and identify timezone
-    metadata["dates"] = local_date.strftime("%Y-%m-%d")
-    metadata["time"] = local_date.strftime("%H:%M:%S")
-    # metadata["timezone"] = entry["timeZone"]
-
-    # Add location
-    location = []
-    try:
-        location = list(
-            filter(
-                bool,
-                [
-                    entry["location"].get(key, None)
-                    for key in (
-                        "placeName",
-                        "localityName",
-                        "administrativeArea",
-                        "country",
-                    )
-                ],
-            )
-        )
-    except KeyError:
-        if verbose and verbose > 1:
-            verbose_msg(
-                f"Entry with date '{local_date.strftime('%Y-%m-%d')}' has no location!"
-            )
-
-    metadata["places"] = ", ".join(location)
-
-    # Add GPS, not all entries have this
-    if "location" in entry and all(
-        ["latitude" in entry["location"], "longitude" in entry["location"]]
-    ):
-        loc = entry["location"]
-        metadata["location"] = f"{loc.get('latitude')}, {loc.get('longitude')}"
-
-    # Add weather information if present
-    if "weather" in entry and all(
-        i in entry["weather"]
-        for i in ["conditionsDescription", "temperatureCelsius", "windSpeedKPH"]
-    ):
-        weather = entry["weather"]
-        metadata[
-            "weather"
-        ] = f"{weather['conditionsDescription']}, {round(weather['temperatureCelsius'], 1)}°C, {round(weather['windSpeedKPH'], 1)} km/h wind"
-
-    # Process tags
-    tags = []
-
-    # First tag is the journal name, if present
-    if journal_name is not None:
-        tags.append(capwords(f"#journal/{journal_name}"))
-
-    if (entry_tags := entry.get("tags", None)) is not None:
-        entry_tags = set(entry_tags)
-
-        for tag in (entry_tags - ignore_tags) - status_tags:
-            # format the tag: remove spaces and capitalize each word
-            # Example: #Original tag --> #{prefix}/originalTag
-            new_tag = capwords(f"{tag_prefix}{tag}")
-            tags.append(new_tag)
-
-        # Handle status tags
-        if status_tags := entry_tags & status_tags:
-            tags.extend(map(lambda tag: capwords("#status/" + tag), status_tags))
-
-    # Add a tag for the location to make places searchable in Obsidian
-    if location:
-        tags.append(f"#places/{'/'.join(map(capwords, location[-1:0:-1]))}")
-
-    # Add a :star: emoji for starred entries
-    if entry["starred"]:
-        tags.append("#\u2B50")
-
-    # Add extra tags, if any
-    if extra_tags is not None:
-        tags.extend(extra_tags)
-
-    # Build the final string with all the tags
-    if tags:
-        metadata["tags"] = ", ".join(tags)
-
-    return metadata
+from entry import Entry
 
 
 def process_journal(
@@ -178,9 +18,11 @@ def process_journal(
     journal: Path,
     vault_directory: Path,
     tag_prefix: str,
+    status_prefix: str,
     verbose: int,
     convert_links: bool,
     yaml: bool,
+    yaml_fields: Union[List, None],
     force: bool,
     merge_entries: bool,
     entries_sep: str,
@@ -190,7 +32,7 @@ def process_journal(
 ) -> None:
     """Process a journal JSON file"""
     # name of folder where journal entries will end up in your Obsidian vault
-    journal_name = journal.stem.lower()
+    journal_name = journal.stem
     base_folder = journal.resolve().parent
     journal_folder = base_folder / journal_name
 
@@ -212,8 +54,8 @@ def process_journal(
     # Needed to perform DayOne -> Obsidian links conversion
     uuid_to_file = {}
 
-    with open(journal, encoding="utf-8") as json_file:
-        data: Dict = json.load(json_file)
+    with journal.open(encoding="utf-8") as json_file:
+        data: List[Dict] = json.load(json_file)
 
         task = progress.add_task(
             f"[bold green]Processing entries of '[cyan][not bold]{journal.name}[/not bold][/cyan]'",
@@ -222,36 +64,33 @@ def process_journal(
 
         # Are there additional tags in the config file?
         if metadata_ext is not None:
-            extra_tags = metadata_ext.pop("tags", None)
+            extra_tags = metadata_ext.get("tags", None)
+            ignore_fields = metadata_ext.get("ignore", None)
 
         entry: Dict
         for entry in data["entries"]:
-            creation_date = dateutil.parser.isoparse(entry["creationDate"])
-            local_date = creation_date.astimezone(
-                pytz.timezone(entry["timeZone"])
-            )  # It's natural to use our local date/time as reference point, not UTC
-
-            # Fetch entry's metadata
-            metadata = retrieve_metadata(
+            # Create a new Entry and add metadata
+            new_entry = Entry.from_json_entry(
                 entry,
-                local_date,
-                tag_prefix,
+                tag_prefix=tag_prefix,
+                status_prefix=status_prefix,
                 extra_tags=extra_tags,
                 ignore_tags=ignore_tags,
                 status_tags=status_tags,
                 journal_name=journal_name,
-                verbose=verbose,
+                ignore_fields=ignore_fields,
             )
-
-            # Create a new Entry and add metadata
-            new_entry = Entry.from_metadata(metadata)
 
             # Add any other metadata field found in the config file
             if metadata_ext is not None:
-                new_entry.metadata.update(metadata_ext)
+                new_entry.metadata.update(metadata_ext.get("extra", {}))
 
-            # Turn on YAML front matter, if requested
-            new_entry.has_yaml = yaml
+            # Handle YAML frontmatter
+            if yaml:
+                new_entry.has_yaml = True
+                # Add YAML fields, if any
+                if yaml_fields is not None:
+                    new_entry.yaml_fields = yaml_fields
 
             # Add body text if it exists (entries can have a "blank body" sometimes), after some tidying up
             entry_text: str
@@ -265,16 +104,16 @@ def process_journal(
                 # Fixes multi-line ```code blocks```
                 # DayOne breaks these block in many lines with a triple ``` delimiters.
                 # This results in a bad formatting of the Markdown output.
-                new_text = re.sub(r"```\s+```", "", new_text, flags=re.MULTILINE)
+                new_text = re.sub(r"```\s+```", "", new_text, re.MULTILINE)
 
                 # Handling attachments: photos, audios, videos, and documents (PDF)
-
                 if "photos" in entry:
                     # Correct photo links. The filename is the md5 code, not the identifier used in the text
                     for photo in entry["photos"]:
                         image_type = photo["type"]
                         original_photo_file = (
-                            base_folder / "photos" / f"{photo['md5']}.{image_type}"
+                            base_folder / "photos" /
+                            f"{photo['md5']}.{image_type}"
                         )
                         renamed_photo_file = (
                             base_folder
@@ -297,7 +136,8 @@ def process_journal(
                 if "pdfAttachments" in entry:
                     # Correct photo pdf links. Similar to what is done on photos
                     for pdf in entry["pdfAttachments"]:
-                        original_pdf_file = base_folder / "pdfs" / f"{pdf['md5']}.pdf"
+                        original_pdf_file = base_folder / \
+                            "pdfs" / f"{pdf['md5']}.pdf"
                         renamed_pdf_file = (
                             base_folder / "pdfs" / f"{pdf['identifier']}.pdf"
                         )
@@ -320,7 +160,8 @@ def process_journal(
                         # AAC files are very often saved with .m4a extension
                         audio_format = "m4a"
                         original_audio_file = (
-                            base_folder / "audios" / f"{audio['md5']}.{audio_format}"
+                            base_folder / "audios" /
+                            f"{audio['md5']}.{audio_format}"
                         )
                         renamed_audio_file = (
                             base_folder
@@ -344,7 +185,8 @@ def process_journal(
                     for video in entry["videos"]:
                         video_format = video["type"]
                         original_video_file = (
-                            base_folder / "videos" / f"{video['md5']}.{video_format}"
+                            base_folder / "videos" /
+                            f"{video['md5']}.{video_format}"
                         )
                         renamed_video_file = (
                             base_folder
@@ -364,23 +206,24 @@ def process_journal(
                             new_text,
                         )
 
+                # Save the text of the new entry
                 new_entry.text = new_text
 
             # Save entries organised by year, year-month, year-month-day.md
-            year_dir = journal_folder / str(creation_date.year)
-            month_dir = year_dir / creation_date.strftime("%Y-%m")
+            year_dir = journal_folder / str(new_entry.creation_date.year)
+            month_dir = year_dir / new_entry.creation_date.strftime("%Y-%m")
             if not month_dir.is_dir():
                 month_dir.mkdir(parents=True)
 
             # Target filename to save to
-            file_date_format = local_date.strftime("%Y-%m-%d")
+            file_date_format = new_entry.local_date.strftime("%Y-%m-%d")
             target_file = month_dir / f"{file_date_format}.md"
             new_entry.output_file = target_file
 
             # Relative path, to check if this entry is already present in the vault directory
             target_file_rel = (
                 Path(journal_name)
-                / f"{creation_date.strftime('%Y/%Y-%m')}"
+                / f"{new_entry.creation_date.strftime('%Y/%Y-%m')}"
                 / f"{file_date_format}.md"
             )
 
@@ -396,19 +239,23 @@ def process_journal(
                         warn_msg(
                             f"Found another entry with the same date '{target_file.stem}'"
                         )
+                    # TODO: merging entries could be improved
+                    # https://github.com/edoardob90/dayone-to-obsidian/issues/4#issue-1590366935
                     if merge_entries:
                         merged_entries += 1
                         prev_entry: Entry = entries.pop(target_file.stem)
-                        del prev_entry.metadata["dates"]
+                        # del prev_entry.metadata["dates"]
                         new_entry.text += f"\n\n{entries_sep}\n\n{prev_entry}"
                     else:
                         # File exists, need to find the next in sequence and append alpha character marker
                         index = 97  # ASCII a
-                        target_file = month_dir / f"{file_date_format}{chr(index)}.md"
+                        target_file = month_dir / \
+                            f"{file_date_format}{chr(index)}.md"
                         while target_file.stem in entries:
                             index += 1
                             target_file = (
-                                month_dir / f"{file_date_format}{chr(index)}.md"
+                                month_dir /
+                                f"{file_date_format}{chr(index)}.md"
                             )
                         new_entry.output_file = target_file
 
@@ -426,24 +273,27 @@ def process_journal(
             progress.update(task, advance=1)
 
     # Rename JSON file to avoid reprocessing if the script is run twice
-    num_files = len(list(base_folder.glob(f"*{journal.stem}.json")))
-    journal.rename(base_folder / f"{num_files - 1}_{journal.name}")
-
-    def replace_link(match: re.Match) -> str:
-        """A replacement function for dayone internal links"""
-        link_text, uuid = match.groups()
-        if uuid in uuid_to_file:
-            return f"[[{uuid_to_file[uuid]}|{link_text}]]"
-        return f"^[Linked entry with UUID `{uuid}` not found]"
+    # Processed JSON file will have a date & time prepended
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    journal.rename(base_folder / f"{timestamp}_{journal.name}")
 
     entry: Entry
     for entry in entries.values():
         if convert_links:
             # Step 2 to replace dayone internal links: we must do a second iteration over entries
             # The regex to match a dayone internal link: [link_text](dayone://view?EntryId=uuid)
+
+            def replace_link(match: re.Match) -> str:
+                """Return an internal Obsidian link. If `uuid` is not found, return a DayOne link"""
+                link_text, uuid = match.groups()
+                if uuid in uuid_to_file:
+                    return f"[[{uuid_to_file[uuid]}|{link_text}]]"
+                return f"[{link_text}](dayone://view?entryId={uuid})"
+
             entry.text = re.sub(
-                r"\[(.*?)\]\(dayone2?:\/\/.*?([A-F0-9]+)\)", replace_link, entry.text
-            )
+                r"\[(.*?)\]\(dayone:\/\/.*?([A-F0-9]+)\)", replace_link, entry.text)
+
+        # Write out the current entry to a file
         entry.dump()
 
     info_msg(
