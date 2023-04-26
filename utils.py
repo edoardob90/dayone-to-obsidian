@@ -223,6 +223,8 @@ def process_journal(
         # Are there additional tags in the config file?
         if metadata_ext is not None:
             extra_tags = metadata_ext.pop("tags", None)
+        else:
+            extra_tags = None
 
         entry: Dict
         for entry in data["entries"]:

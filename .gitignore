@@ -3,3 +3,4 @@ journals
 test.py
 *.json
 *.pyc
+./.idea
